@@ -1,7 +1,7 @@
 """Точка входа FastAPI.
 
-Этап 2: каркас + CORS. Этап 3: lifespan с автоматическим созданием таблиц
-и роуты health с проверкой БД. Прогнозные роуты /api/v1/* — Этапы 12–14.
+Этап 2: каркас + CORS. Этап 3: lifespan с create_all и health с проверкой БД.
+Этап 4: роутер auth (register/login/me). Прогнозные роуты /api/v1/* — Этапы 12–14.
 """
 import logging
 from contextlib import asynccontextmanager
@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.api.routes.auth import router as auth_router
 from backend.api.routes.health import router as health_router
 from backend.core.config import get_settings
 from backend.db.models import Base
@@ -55,4 +56,5 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router)
 app.include_router(health_router)

@@ -42,7 +42,10 @@ redis = "^5.2"
 celery = "^5.4"
 # --- Безопасность ---
 passlib = { extras = ["bcrypt"], version = "^1.7" }
+# bcrypt 5.x ломает passlib 1.7.4 (нет __about__) — фиксируем верхнюю границу
+bcrypt = ">=4.1,<5.0"
 pyjwt = "^2.9"
+email-validator = "^2.2"
 # --- Датасеты / визуализация ---
 kagglehub = "^0.2"
 datasets = "^3.1"
