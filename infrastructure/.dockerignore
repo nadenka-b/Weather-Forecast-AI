@@ -1,0 +1,51 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Виртуальные окружения
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Секреты
+.env
+.env.*
+!.env.example
+
+# Логи
+logs/
+*.log
+
+# Локальные данные
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# ML-кэши и модели
+.cache/
+.huggingface/
+*.pt
+*.pth
+*.bin
+*.safetensors
+
+# Прочее
+docs/
+tests/
+frontend/
+infrastructure/
+Dockerfile
+docker-compose.yml
+*.md
