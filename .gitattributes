@@ -1,0 +1,19 @@
+# Нормализация переносов строк в репозитории (LF в git)
+* text=auto
+
+*.py   text
+*.md   text
+*.toml text
+*.yml  text
+*.yaml text
+*.conf text
+*.cfg  text
+*.ini  text
+*.sh   text eol=lf
+*.bat  text eol=crlf
+
+# Бинарные файлы
+*.png binary
+*.jpg binary
+*.pdf binary
+*.db  binary
