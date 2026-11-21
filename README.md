@@ -117,13 +117,17 @@ poetry run python run.py                # API на http://127.0.0.1:8000
 Проверки: `GET /healthz` — liveness, `GET /health` — статусы зависимостей,
 `poetry run pytest` — тесты.
 
-Сервисы по мере этапов: Ollama (`ollama pull qwen2.5:7b-instruct`), Qdrant/Redis/PostgreSQL —
+Docker-стек Этапа 3 — PostgreSQL + приложение (оба сервиса проходят healthcheck):
 
 ```bash
-docker compose -f infrastructure/docker-compose.yml up -d db redis qdrant
+cd infrastructure
+cp .env.example .env                 # задайте JWT_SECRET
+docker compose up -d --build
+curl http://localhost:8000/health    # {"status":"healthy", ...}
 ```
 
-Полный Docker-стек (app + worker + beat + nginx) собирается на Этапе 15.
+Ollama (`ollama pull qwen2.5:7b-instruct`), Redis и Qdrant подключаются на Этапах 10–11;
+полный стек (worker + beat + nginx) собирается на Этапе 15.
 
 ---
 
