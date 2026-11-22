@@ -46,6 +46,7 @@ class Settings(BaseSettings):
 
     # Агентный цикл
     max_iterations: int = 3
+    critic_pass_threshold: float = 7.0  # Critic ниже порога -> итерация Editor / HITL
 
     # Данные
     data_dir: Path = BASE_DIR / "data"
