@@ -13,14 +13,16 @@ task_type="tabular": проверка типов, импутация, one-hot, �
 - "records": list[dict] для tabular (+ target_column).
 """
 import logging
-from pathlib import Path
 from typing import Any
-
-import pandas as pd
 
 from backend.agents.base import BaseAgent
 from backend.core.models import ForecastState
-from backend.timeseries.preprocessing import prepare_tabular, prepare_timeseries
+from backend.timeseries.preprocessing import (
+    load_records,
+    load_series,
+    prepare_tabular,
+    prepare_timeseries,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +43,7 @@ class DataAnalyst(BaseAgent):
     # Временные ряды
     # ------------------------------------------------------------------
     def _process_timeseries(self, state: ForecastState) -> ForecastState:
-        values, dates = self._load_series(state)
+        values, dates = load_series(state.metadata)
         target_freq = state.freq or self.target_freq
 
         result = prepare_timeseries(values, dates=dates, target_freq=target_freq)
@@ -73,40 +75,11 @@ class DataAnalyst(BaseAgent):
         )
         return state
 
-    @staticmethod
-    def _load_series(state: ForecastState) -> tuple[list[float], list | None]:
-        """Ряд из metadata: inline-значения или CSV-файл."""
-        meta = state.metadata
-        if meta.get("series_values") is not None:
-            values = [float(v) for v in meta["series_values"]]
-            dates = meta.get("series_dates")
-            return values, dates
-
-        path = meta.get("series_path")
-        if path and Path(path).exists():
-            df = pd.read_csv(path)
-            date_col = df.columns[0]
-            value_col = df.columns[1] if len(df.columns) > 1 else df.columns[0]
-            return df[value_col].astype(float).tolist(), df[date_col].tolist()
-
-        raise ValueError(
-            "Ряд не найден: задайте metadata['series_values'] или metadata['series_path']"
-        )
-
     # ------------------------------------------------------------------
     # Табличные данные
     # ------------------------------------------------------------------
     def _process_tabular(self, state: ForecastState) -> ForecastState:
-        records = state.metadata.get("records")
-        if records is None:
-            path = state.metadata.get("records_path")
-            if path and Path(path).exists():
-                records = pd.read_csv(path).to_dict(orient="records")
-            else:
-                raise ValueError(
-                    "Таблица не найдена: задайте metadata['records'] или metadata['records_path']"
-                )
-
+        records = load_records(state.metadata)
         result = prepare_tabular(records, target_column=state.target_column)
         state.diagnostics = result["diagnostics"]
         state.metadata.update(

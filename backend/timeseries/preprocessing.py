@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -152,6 +153,35 @@ def summarize(s: pd.Series) -> dict[str, Any]:
         "max": round(float(clean.max()), 3) if len(clean) else None,
         "acf_lag1": round(float(s.autocorr(lag=1)), 3) if len(clean) > 2 else None,
     }
+
+
+# ============================================================================
+# Загрузка данных из metadata состояния (общая для DataAnalyst/ModelSelector)
+# ============================================================================
+def load_series(metadata: dict[str, Any]) -> tuple[list[float], list | None]:
+    """Ряд из metadata: inline-значения или CSV (первая колонка — дата)."""
+    if metadata.get("series_values") is not None:
+        values = [float(v) for v in metadata["series_values"]]
+        return values, metadata.get("series_dates")
+
+    path = metadata.get("series_path")
+    if path and Path(path).exists():
+        df = pd.read_csv(path)
+        date_col = df.columns[0]
+        value_col = df.columns[1] if len(df.columns) > 1 else df.columns[0]
+        return df[value_col].astype(float).tolist(), df[date_col].tolist()
+
+    raise ValueError("Ряд не найден: задайте metadata['series_values'] или metadata['series_path']")
+
+
+def load_records(metadata: dict[str, Any]) -> list[dict[str, Any]]:
+    """Табличные данные из metadata: records или CSV."""
+    if metadata.get("records") is not None:
+        return metadata["records"]
+    path = metadata.get("records_path")
+    if path and Path(path).exists():
+        return pd.read_csv(path).to_dict(orient="records")
+    raise ValueError("Таблица не найдена: задайте metadata['records'] или metadata['records_path']")
 
 
 # ============================================================================
