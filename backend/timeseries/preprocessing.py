@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -104,7 +105,10 @@ def adf_test(s: pd.Series) -> dict[str, Any]:
     clean = s.dropna()
     if len(clean) < 20:
         return {"adf_pvalue": None, "stationary": None, "note": "insufficient data"}
-    result = adfuller(clean, autolag="AIC")
+    with warnings.catch_warnings():
+        # statsmodels 0.15+: предупреждение о смене формата ответа adfuller
+        warnings.simplefilter("ignore", FutureWarning)
+        result = adfuller(clean, autolag="AIC")
     pvalue = float(result[1])
     return {"adf_pvalue": round(pvalue, 4), "stationary": pvalue < ADF_PVALUE_THRESHOLD}
 
