@@ -76,8 +76,12 @@ def parse_tool_json(text: str) -> dict[str, Any] | None:
 
 
 async def _stub_llm_call(messages: list[dict[str, str]]) -> str:
-    """Заглушка LLM до Этапа 11: валидный вызов fallback-правила."""
-    return '{"tool": "fit_arima", "arguments": {}}'
+    """Заглушка LLM до Этапа 11: валидный вызов ARIMA(1,1,1).
+
+    Явный order (а не автоподбор) — чтобы прогоны с заглушкой были быстрыми;
+    fallback-правило (fit_arima без order) проверяется отдельными тестами.
+    """
+    return '{"tool": "fit_arima", "arguments": {"order": [1, 1, 1]}}'
 
 
 class LLMManager:

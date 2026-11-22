@@ -18,7 +18,13 @@ import logging
 from typing import Any, Mapping
 
 from backend.agents.base import BaseAgent
-from backend.agents.reasoning import ReasoningLogger, new_request_id
+from backend.agents.reasoning import (
+    DbLogStore,
+    InMemoryLogStore,
+    LogStore,
+    ReasoningLogger,
+    new_request_id,
+)
 from backend.core.config import get_settings
 from backend.core.models import ForecastState
 
@@ -34,18 +40,27 @@ ADAPTIVE_BUDGET_MID = 6.5
 
 
 class Supervisor:
-    """Оркестрирует цикл агентов и ведёт дерево рассуждений."""
+    """Оркестрирует цикл агентов и ведёт дерево рассуждений.
+
+    log_store задаёт хранилище reasoning-лога для каждого запроса:
+    InMemoryLogStore (по умолчанию — тесты и локальные прогоны) или
+    DbLogStore (таблица reasoning_logs, требование задания MLF —
+    используется фабрикой build_supervisor для продакшена).
+    """
 
     def __init__(
         self,
         agents: Mapping[str, BaseAgent] | None = None,
         max_iterations: int | None = None,
+        log_store: LogStore | None = None,
         logger_: ReasoningLogger | None = None,
     ):
         settings = get_settings()
         self.agents: dict[str, BaseAgent] = dict(agents or {})
         self.max_iterations = max_iterations or settings.max_iterations
         self.critic_threshold = settings.critic_pass_threshold
+        self.log_store = log_store
+        self._injected_logger = logger_
         self._reasoning: ReasoningLogger | None = logger_
         self._iteration = 0
 
@@ -164,8 +179,14 @@ class Supervisor:
             reusable = self._reasoning is not None and not self._reasoning.entries
             state.log_id = self._reasoning.request_id if reusable else new_request_id()
 
-        if self._reasoning is None or self._reasoning.request_id != state.log_id:
-            self._reasoning = ReasoningLogger(state.log_id)
+        needs_new_logger = (
+            self._reasoning is None
+            or self._reasoning.request_id != state.log_id
+            or self._reasoning.entries  # повторный прогон — новое дерево
+        )
+        if needs_new_logger:
+            store = self.log_store or getattr(self._reasoning, "store", None)
+            self._reasoning = ReasoningLogger(state.log_id, store=store)
         reasoning = self._reasoning
 
         root_id = await reasoning.start(
@@ -280,3 +301,36 @@ class Supervisor:
             "iterations": self._iteration,
             "agents_registered": sorted(self.agents.keys()),
         }
+
+
+async def build_supervisor(max_iterations: int | None = None) -> Supervisor:
+    """Продакшен-сборка (Этапы 10–12): все реальные агенты + RAG-поиск кейсов
+    + reasoning-лог в таблице reasoning_logs (требование задания MLF).
+
+    Editor подключается на Этапе 14 (HITL-цикл коррекции).
+    """
+    from backend.agents.critic import Critic
+    from backend.agents.data_analyst import DataAnalyst
+    from backend.agents.model_selector import ModelSelector
+    from backend.agents.validator import Validator
+
+    agents: dict[str, BaseAgent] = {
+        "data_analyst": DataAnalyst(),
+        "model_selector": ModelSelector(),
+        "validator": Validator(),
+        "critic": Critic(),
+    }
+    try:
+        from backend.retrieval.hybrid_retriever import build_hybrid_retriever
+
+        retriever = await build_hybrid_retriever()
+        agents["model_selector"] = ModelSelector(retriever=retriever)
+        logger.info("RAG-поиск кейсов подключён к ModelSelector")
+    except Exception as exc:  # noqa: BLE001 — без БЗ пайплайн работает без few-shot
+        logger.warning("RAG недоступен (%s) — ModelSelector без few-shot кейсов", exc)
+
+    return Supervisor(
+        agents=agents,
+        max_iterations=max_iterations,
+        log_store=DbLogStore(),
+    )

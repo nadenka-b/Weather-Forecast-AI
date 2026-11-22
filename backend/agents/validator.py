@@ -68,8 +68,14 @@ class Validator(BaseAgent):
         if not predictions:
             checks["predictions"] = "skipped: нет прогноза (ранний этап пайплайна)"
         else:
+            # финальный прогноз горизонта (Этап 12) — строгая длина;
+            # валидационный отрезок — достаточна одна точка
+            is_final = meta.get("predictions") is not None
             checks["predictions"] = self._check_predictions(
-                predictions, state.horizon, errors
+                predictions,
+                state.horizon,
+                errors,
+                expected_len=state.horizon if is_final else None,
             )
 
         # --- 2. Климатические пределы
@@ -115,16 +121,22 @@ class Validator(BaseAgent):
 
     @staticmethod
     def _check_predictions(
-        predictions: list[float], horizon: int, errors: list[str]
+        predictions: list[float],
+        horizon: int,
+        errors: list[str],
+        expected_len: int | None = None,
     ) -> dict[str, Any]:
+        """NaN — всегда ошибка; длина: для финального прогноза строго == horizon,
+        для валидационного отрезка — не меньше одной точки."""
         nan_count = sum(1 for v in predictions if v is None or math.isnan(float(v)))
         if nan_count:
             errors.append(f"Прогноз содержит {nan_count} NaN")
-        min_len = max(1, min(horizon, 1))
-        if len(predictions) < min_len:
+        if expected_len is not None and len(predictions) != expected_len:
             errors.append(
-                f"Длина прогноза {len(predictions)} меньше ожидаемой ({min_len})"
+                f"Длина финального прогноза {len(predictions)} != горизонту {expected_len}"
             )
+        elif len(predictions) < 1:
+            errors.append("Прогноз пуст")
         return {"length": len(predictions), "nan_count": nan_count}
 
     @staticmethod

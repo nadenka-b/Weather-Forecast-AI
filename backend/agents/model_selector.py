@@ -64,18 +64,54 @@ def _eda_summary(state: ForecastState) -> str:
     return "\n".join(str(line) for line in lines)
 
 
-def _rag_stub(state: ForecastState) -> list[str]:
-    """Заглушка RAG до Этапа 10: пустой список похожих кейсов."""
-    return []
+def _query_features(state: ForecastState) -> dict[str, Any]:
+    """Признаки текущего ряда в формате кейсов БЗ (для векторного поиска)."""
+    diagnostics = state.diagnostics or {}
+    stats = diagnostics.get("stats", {})
+    stl = diagnostics.get("stl") or {}
+    return {
+        "length": stats.get("length"),
+        "mean": stats.get("mean"),
+        "std": stats.get("std"),
+        "min": stats.get("min"),
+        "max": stats.get("max"),
+        "acf_lag1": stats.get("acf_lag1"),
+        "adf_pvalue": (diagnostics.get("adf") or {}).get("adf_pvalue"),
+        "stationary": (diagnostics.get("adf") or {}).get("stationary"),
+        "seasonal_period": diagnostics.get("seasonal_period"),
+        "trend_strength": stl.get("trend_strength"),
+        "seasonal_strength": stl.get("seasonal_strength"),
+        "missing_rate": diagnostics.get("raw_missing_rate"),
+        "variable": state.metadata.get("variable") or state.target_column,
+        "city": state.metadata.get("city"),
+    }
+
+
+def _query_text(state: ForecastState) -> str:
+    """Текстовое описание текущего ряда (для BM25), в стиле descriptions БЗ."""
+    diagnostics = state.diagnostics or {}
+    stl = diagnostics.get("stl") or {}
+    variable = state.metadata.get("variable") or state.target_column or "ряд"
+    city = state.metadata.get("city") or "город"
+    period = diagnostics.get("seasonal_period")
+    return (
+        f"Дневной ряд {variable} ({city}), сезонность {period or 'не выражена'}, "
+        f"тренд {stl.get('trend_strength', 0):.2f}."
+    )
 
 
 class ModelSelector(LLMAgent):
-    """Выбирает модель и гиперпараметры через реестр инструментов."""
+    """Выбирает модель и гиперпараметры через реестр инструментов.
+
+    retriever (Этап 10): гибридный RAG-поиск похожих кейсов базы знаний;
+    если не задан — промпт идёт без few-shot примеров.
+    """
 
     def __init__(
         self,
         registry: ToolRegistry | None = None,
         llm_manager: LLMManager | None = None,
+        retriever: Any | None = None,
     ):
         super().__init__(
             name="model_selector",
@@ -83,6 +119,15 @@ class ModelSelector(LLMAgent):
         )
         self.registry = registry or build_default_registry()
         self.manager = llm_manager or LLMManager()
+        self.retriever = retriever
+
+    async def _few_shot(self, state: ForecastState) -> list[str]:
+        """Few-shot примеры: топ похожих кейсов из базы знаний (RAG)."""
+        if self.retriever is None:
+            return []
+        return self.retriever.few_shot_prompts(
+            _query_features(state), _query_text(state), top_k=3
+        )
 
     async def process(self, state: ForecastState) -> ForecastState:
         if state.task_type == "tabular":
@@ -95,7 +140,7 @@ class ModelSelector(LLMAgent):
     async def _process_timeseries(self, state: ForecastState) -> ForecastState:
         eda = _eda_summary(state)
         decision = await self.manager.select_tool(
-            eda, self.registry, fewshot=_rag_stub(state)
+            eda, self.registry, fewshot=await self._few_shot(state)
         )
 
         values, dates = load_series(state.metadata)
@@ -125,7 +170,7 @@ class ModelSelector(LLMAgent):
         records = load_records(state.metadata)
         prepared = prepare_tabular(records, target_column=state.target_column)
         decision = await self.manager.select_tool(
-            _eda_summary(state), self.registry, fewshot=_rag_stub(state)
+            _eda_summary(state), self.registry, fewshot=await self._few_shot(state)
         )
         context = {
             "frame": prepared["frame"],

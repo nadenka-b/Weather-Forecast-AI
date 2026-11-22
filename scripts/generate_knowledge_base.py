@@ -288,8 +288,15 @@ def main() -> None:
         if not windows:
             continue
         n_test = max(1, int(len(windows) * args.holdout_fraction))
-        test_windows += [(source, w) for w in windows[-n_test:]]
-        train_windows += [(source, w) for w in windows[: -n_test]]
+        source_test = windows[-n_test:]
+        # Gap против утечки: train-окна должны ЗАКАНЧИВАТЬСЯ раньше начала
+        # первого test-окна, иначе данные пересекаются (окна с шагом < окна)
+        first_test_start = source_test[0].index[0]
+        source_train = [
+            w for w in windows[: -n_test] if w.index[-1] < first_test_start
+        ]
+        test_windows += [(source, w) for w in source_test]
+        train_windows += [(source, w) for w in source_train]
     logger.info(
         "окон: %d обучающих, %d тестовых (holdout %.0f%%)",
         len(train_windows), len(test_windows), args.holdout_fraction * 100,
@@ -302,8 +309,13 @@ def main() -> None:
             if not windows:
                 continue
             n_test = max(1, int(len(windows) * args.holdout_fraction))
-            test_windows += [(source, w) for w in windows[-n_test:]]
-            taken = windows[: -n_test][: need // 8 + 1]
+            source_test = windows[-n_test:]
+            first_test_start = source_test[0].index[0]
+            source_train = [
+                w for w in windows[: -n_test] if w.index[-1] < first_test_start
+            ]
+            test_windows += [(source, w) for w in source_test]
+            taken = source_train[: need // 8 + 1]
             train_windows += [(source, w) for w in taken]
             need -= len(taken)
         logger.info("после синтетики: %d обучающих окон", len(train_windows))
