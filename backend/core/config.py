@@ -27,10 +27,11 @@ class Settings(BaseSettings):
     # База данных (local: SQLite, prod: PostgreSQL)
     database_url: str = f"sqlite+aiosqlite:///{BASE_DIR / 'weather_forecast.db'}"
 
-    # LLM: ollama | hf_local | api (Этап 11)
-    llm_provider: str = "ollama"
-    ollama_base_url: str = "http://127.0.0.1:11434"
-    ollama_model: str = "qwen2.5:7b-instruct"
+    # LLM: lm_studio | hf_local | api (Этап 11)
+    # LM Studio — локальный OpenAI-совместимый сервер (порт 1234 по умолчанию)
+    llm_provider: str = "lm_studio"
+    lm_studio_base_url: str = "http://127.0.0.1:1234/v1"
+    lm_studio_model: str = "qwen2.5-7b-instruct"
     llm_max_fallback_attempts: int = 3
 
     # RAG (Этап 10)

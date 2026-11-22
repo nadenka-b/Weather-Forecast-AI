@@ -2,7 +2,7 @@
 
 Интеллектуальная система прогнозирования погодных временных рядов с **мультиагентной архитектурой**, **Agentic RAG** и строгой оценкой качества. Курсовой проект по дисциплине MLF-2026.
 
-> **Статус:** Этап 1–2 — тема выбрана, репозиторий и каркас приложения созданы. Полный план с распределением работ — в [docs/План_проекта.md](docs/План_проекта.md).
+> **Статус:** Этапы 1–4 выполнены: каркас, БД (8 таблиц), Docker (db + app), аутентификация (bcrypt + JWT).
 
 ---
 
@@ -62,7 +62,7 @@
 
 ## 🧰 Стек
 
-Python 3.12 + Poetry · FastAPI · SQLAlchemy (async) + PostgreSQL/SQLite · Alembic · Celery + Redis · Qdrant/FAISS + rank-bm25 · sentence-transformers / tsfresh / PCA · statsmodels (ARIMA/SARIMA, STL) · Prophet · XGBoost/LightGBM · pmdarima · Ollama (Qwen2.5-7B-Instruct) / HuggingFace / внешние API · pytest (покрытие ≥ 70%) · Chainlit/Gradio · Docker Compose + Nginx · GitHub Actions (бонус).
+Python 3.12 + Poetry · FastAPI · SQLAlchemy (async) + PostgreSQL/SQLite · Alembic · Celery + Redis · Qdrant/FAISS + rank-bm25 · sentence-transformers / tsfresh / PCA · statsmodels (ARIMA/SARIMA, STL) · Prophet · XGBoost/LightGBM · pmdarima · LM Studio (OpenAI-совместимый сервер, Qwen2.5-7B-Instruct) / HuggingFace / внешние API · pytest (покрытие ≥ 70%) · Chainlit/Gradio · Docker Compose + Nginx · GitHub Actions (бонус).
 
 ---
 
@@ -73,7 +73,7 @@ Python 3.12 + Poetry · FastAPI · SQLAlchemy (async) + PostgreSQL/SQLite · Ale
 | **Балабанова Надежда** — ML-инжиниринг и данные | метеодатасеты, предобработка (пропуски, сезонность), feature extraction и эмбеддинги, генерация базы знаний и справочника метеотерминов, качество RAG, метрики и `run_eval.py`, отчёт с анализом |
 | **Саттарова Аделина** — бэкенд и DevOps | FastAPI и REST API, БД и миграции, JWT/роли, агентный слой (base/Supervisor/Tool Calling/LLMManager), Celery/Redis, Docker Compose + Nginx, CI, UI |
 
-Детальное распределение по этапам — в [docs/План_проекта.md](docs/План_проекта.md).
+Детальное распределение по этапам команда ведёт во внутреннем плане работ.
 
 ---
 
@@ -98,7 +98,6 @@ Weather-Forecast-AI/
 ├── tests/                 # pytest
 ├── infrastructure/        # docker-compose, Dockerfile, nginx.conf
 ├── data/                  # датасеты (raw/processed, не в git)
-├── docs/                  # План_проекта.md и др.
 ├── pyproject.toml
 └── run.py
 ```
@@ -126,7 +125,8 @@ docker compose up -d --build
 curl http://localhost:8000/health    # {"status":"healthy", ...}
 ```
 
-Ollama (`ollama pull qwen2.5:7b-instruct`), Redis и Qdrant подключаются на Этапах 10–11;
+LM Studio (локальный OpenAI-совместимый сервер: приложение LM Studio → Developer → Start Server,
+порт 1234, модель Qwen2.5-7B-Instruct), а также Redis и Qdrant подключаются на Этапах 10–11;
 полный стек (worker + beat + nginx) собирается на Этапе 15.
 
 ---
