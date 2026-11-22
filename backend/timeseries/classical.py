@@ -92,6 +92,9 @@ def fit_arima(
             "metrics": metrics,
             "n_train": int(len(train)),
             "aic": round(float(fitted.aic), 2),
+            # валидационный прогноз и факт — для Validator (Этап 8)
+            "val_pred": [round(float(v), 4) for v in np.asarray(pred)],
+            "val_true": [round(float(v), 4) for v in val.values],
         }
         if best is None or metrics["mae"] < best["metrics"]["mae"]:
             best = candidate_result
@@ -136,6 +139,8 @@ def fit_prophet(
         "seasonality_mode": seasonality_mode,
         "metrics": regression_metrics(val.values, pred, train.values, season=season or 1),
         "n_train": int(len(train)),
+        "val_pred": [round(float(v), 4) for v in pred],
+        "val_true": [round(float(v), 4) for v in val.values],
     }
 
 
@@ -191,6 +196,8 @@ def fit_xgboost(
             val.values, np.asarray(predictions), train_series.values, season=season or 1
         ),
         "n_train": int(len(train_series)),
+        "val_pred": [round(float(v), 4) for v in predictions],
+        "val_true": [round(float(v), 4) for v in val.values],
     }
 
 

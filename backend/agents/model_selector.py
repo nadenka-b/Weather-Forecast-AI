@@ -110,6 +110,12 @@ class ModelSelector(LLMAgent):
         }
 
         result = self.registry.run(decision.tool, decision.arguments, context)
+        if result.get("val_pred"):
+            # даты валидационного отрезка — для климатических проверок Validator
+            n_val = len(result["val_pred"])
+            result["val_dates"] = [
+                str(ts.date()) for ts in prepared["series"].index[-n_val:]
+            ]
         return self._apply_decision(state, decision, result)
 
     # ------------------------------------------------------------------
@@ -142,6 +148,10 @@ class ModelSelector(LLMAgent):
             key: result[key] for key in _PARAM_KEYS if key in result
         }
         state.metadata["val_metrics"] = result.get("metrics")
+        # валидационный прогноз/факт/даты — вход для Validator (Этап 8)
+        state.metadata["val_pred"] = result.get("val_pred")
+        state.metadata["val_true"] = result.get("val_true")
+        state.metadata["val_dates"] = result.get("val_dates")
         state.metadata["selected_tool"] = decision.tool
         state.metadata["tool_attempts"] = decision.attempts
         state.metadata["used_fallback"] = decision.used_fallback

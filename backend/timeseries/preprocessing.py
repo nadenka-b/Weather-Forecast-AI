@@ -155,6 +155,30 @@ def summarize(s: pd.Series) -> dict[str, Any]:
     }
 
 
+def climate_bounds(series: pd.Series, pad_fraction: float = 0.1) -> dict[str, Any]:
+    """Климатические пределы по истории ряда — для Validator (Этап 8).
+
+    Глобальные и помесячные [min, max] с допуском pad_fraction от размаха:
+    прогноз среднесуточной температуры физически не может выходить за
+    климатическую норму города/месяца (требование темы проекта).
+    """
+    clean = series.dropna()
+    if clean.empty:
+        return {"global": None, "monthly": {}}
+    lo, hi = float(clean.min()), float(clean.max())
+    pad = (hi - lo) * pad_fraction or 1.0
+    monthly: dict[str, list[float]] = {}
+    for month, group in clean.groupby(clean.index.month):
+        monthly[str(int(month))] = [
+            round(float(group.min()) - pad, 2),
+            round(float(group.max()) + pad, 2),
+        ]
+    return {
+        "global": [round(lo - pad, 2), round(hi + pad, 2)],
+        "monthly": monthly,
+    }
+
+
 # ============================================================================
 # Загрузка данных из metadata состояния (общая для DataAnalyst/ModelSelector)
 # ============================================================================

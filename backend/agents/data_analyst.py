@@ -18,6 +18,7 @@ from typing import Any
 from backend.agents.base import BaseAgent
 from backend.core.models import ForecastState
 from backend.timeseries.preprocessing import (
+    climate_bounds,
     load_records,
     load_series,
     prepare_tabular,
@@ -59,6 +60,8 @@ class DataAnalyst(BaseAgent):
                 "stationary": diagnostics["adf"]["stationary"],
                 "prepared_mean": diagnostics["stats"]["mean"],
                 "prepared_std": diagnostics["stats"]["std"],
+                # климатические пределы для Validator (Этап 8)
+                "climate_bounds": climate_bounds(series),
             }
         )
         self._last_result = {
