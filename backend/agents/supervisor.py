@@ -188,10 +188,10 @@ class Supervisor:
         effective_max = min(self.max_iterations, adaptive_budget)
         initial_score = state.critic_score
 
-        if editor is None:
-            stopped_reason = "editor_not_registered"
-        elif not needs_correction:
+        if not needs_correction:
             stopped_reason = "converged"
+        elif editor is None:
+            stopped_reason = "editor_not_registered"
         elif effective_max == 0:
             stopped_reason = "budget_exhausted"
         else:
