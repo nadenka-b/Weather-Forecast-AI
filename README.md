@@ -2,7 +2,7 @@
 
 Интеллектуальная система прогнозирования погодных временных рядов с **мультиагентной архитектурой**, **Agentic RAG** и строгой оценкой качества. Курсовой проект по дисциплине MLF-2026.
 
-> **Статус:** Этапы 1–11 выполнены: каркас, БД (8 таблиц), Docker (db + app), JWT-аутентификация, мультиагентная система (DataAnalyst / ModelSelector c Tool Calling / Validator / Critic + Supervisor), база знаний 1000 кейсов из Jena Climate и Daily Climate, справочник 578 терминов, гибридный RAG (BM25 + векторы + RRF), реальные LLM через LM Studio с трассировкой вызовов. 200+ тестов зелёные.
+> **Статус:** Этапы 1–12 выполнены: каркас, БД (9 таблиц), Docker (db + redis + app + worker), JWT-аутентификация, мультиагентная система (DataAnalyst / ModelSelector c Tool Calling / Validator / Critic + Supervisor), база знаний 1000 кейсов из Jena Climate и Daily Climate, справочник 578 терминов, гибридный RAG (BM25 + векторы + RRF), LLM через LM Studio с трассировкой вызовов, REST API прогноза с фоновыми задачами и HITL. 240+ тестов зелёные.
 
 ---
 
@@ -121,6 +121,25 @@ poetry run python run.py                # API на http://127.0.0.1:8000
 `vllm`, `hf_local` (transformers), `api` (OpenRouter и др.) — альтернативы;
 `stub` — без сети (тесты и офлайн-разработка: заглушки возвращают валидный Tool Call).
 Каждый вызов LLM пишется в таблицу `llm_calls` (модель, токены, latency, статус).
+
+**API прогноза** (нужен JWT; `POST` возвращает 202 и `task_id`, дальше — опрос статуса):
+
+```bash
+TOKEN=$(curl -s -X POST localhost:8000/auth/register -H "Content-Type: application/json" \
+  -d '{"email":"a@b.c","username":"alice","password":"StrongPass1"}' | python -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+TASK=$(curl -s -X POST localhost:8000/api/v1/forecast/json -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"series_values":[...],"horizon":14,"city":"Jena","variable":"temperature"}' \
+  | python -c "import sys,json;print(json.load(sys.stdin)['task_id'])")
+curl -s localhost:8000/api/v1/forecast/$TASK/status   -H "Authorization: Bearer $TOKEN"  # pending → running → waiting_for_human | completed | failed
+curl -s localhost:8000/api/v1/forecast/$TASK/result   -H "Authorization: Bearer $TOKEN"  # модель, метрики, прогноз, путь к CSV
+curl -s localhost:8000/api/v1/forecast/$TASK/reasoning -H "Authorization: Bearer $TOKEN" # дерево рассуждений + вызовы LLM
+curl -s -X POST localhost:8000/api/v1/forecast/$TASK/hitl -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"action":"accept"}'                            # или change_model / change_horizon
+```
+
+Фоновые задачи: `TASK_BACKEND=inline` — выполнение в процессе API (локальная разработка, без Redis);
+`celery` — воркер с брокером Redis (сервис `worker` в docker-compose).
 
 Docker-стек Этапа 3 — PostgreSQL + приложение (оба сервиса проходят healthcheck):
 

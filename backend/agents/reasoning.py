@@ -166,3 +166,43 @@ class ReasoningLogger:
     def entries(self) -> list[dict[str, Any]]:
         """Плоский список записей текущего прогона (для state.metadata)."""
         return list(self._entries)
+
+
+async def fetch_reasoning_tree(request_id: str) -> list[dict[str, Any]]:
+    """Дерево рассуждений задачи из reasoning_logs (Этап 12, GET /reasoning)."""
+    from sqlalchemy import select
+
+    from backend.db.session import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        rows = (
+            await session.execute(
+                select(ReasoningLog)
+                .where(ReasoningLog.request_id == request_id)
+                .order_by(ReasoningLog.started_at)
+            )
+        ).scalars().all()
+
+    def iso(value: Any) -> str | None:
+        return value.isoformat() if value else None
+
+    nodes = {
+        row.id: {
+            "id": row.id,
+            "parent_id": row.parent_id,
+            "agent_name": row.agent_name,
+            "tool_name": row.tool_name,
+            "status": row.status,
+            "input_summary": row.input_summary,
+            "output_summary": row.output_summary,
+            "started_at": iso(row.started_at),
+            "finished_at": iso(row.finished_at),
+            "children": [],
+        }
+        for row in rows
+    }
+    roots: list[dict[str, Any]] = []
+    for node in nodes.values():
+        parent = nodes.get(node["parent_id"]) if node["parent_id"] else None
+        (parent["children"] if parent else roots).append(node)
+    return roots

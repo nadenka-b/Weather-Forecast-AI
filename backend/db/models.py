@@ -203,6 +203,42 @@ class ModelComparison(Base):
 
 
 # ============================================================================
+# ForecastTasks — задачи прогноза (Этап 12; расширение схемы сверх 8 таблиц задания)
+# ============================================================================
+class ForecastTask(Base):
+    """Задача прогноза: state хранится по ссылке (task_id), не в payload.
+
+    Статусы (задание MLF): pending -> running -> waiting_for_human | completed | failed.
+    """
+
+    __tablename__ = "forecast_tasks"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    user_id = Column(
+        String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    status = Column(String, default="pending", nullable=False)
+    series_id = Column(String, nullable=False)
+    horizon = Column(Integer, nullable=False)
+    task_type = Column(String, default="timeseries", nullable=False)
+    target_column = Column(String, nullable=True)
+    input_path = Column(String, nullable=True)   # CSV ряда (date,value)
+    state = Column(JSON, nullable=True)          # снимок ForecastState
+    result = Column(JSON, nullable=True)         # результат для /result
+    error = Column(Text, nullable=True)
+    hitl_requested = Column(Boolean, default=False, nullable=False)
+    iterations = Column(Integer, default=0, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_forecast_tasks_status", "status"),
+    )
+
+
+# ============================================================================
 # ReasoningLogs — иерархический лог рассуждений агентов
 # ============================================================================
 class ReasoningLog(Base):

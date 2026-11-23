@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 
-from backend.core.metrics import regression_metrics
+from backend.core.metrics import naive_forecast, regression_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +199,88 @@ def fit_xgboost(
         "val_pred": [round(float(v), 4) for v in predictions],
         "val_true": [round(float(v), 4) for v in val.values],
     }
+
+
+def predict_final(
+    series: pd.Series,
+    horizon: int,
+    model_type: str | None,
+    model_params: dict[str, Any] | None = None,
+    season: int | None = None,
+) -> list[float]:
+    """Финальный прогноз на `horizon` шагов вперёд выбранной моделью (Этап 12).
+
+    Модель переобучается на всём ряду (валидационный сплит был только для
+    выбора гиперпараметров). Неизвестная/не заданная модель -> наивный сезонный.
+    """
+    params = model_params or {}
+    model_type = (model_type or "naive_seasonal").lower()
+    series = series.dropna()
+
+    if model_type in ("arima", "sarima"):
+        order = params.get("order")
+        seasonal_order = params.get("seasonal_order")
+        if order is None:  # auto: подобрать порядок на валидации, затем обучить на всём ряду
+            chosen = fit_arima(series, horizon, order=None, season=season)
+            order, seasonal_order = chosen["order"], chosen["seasonal_order"]
+        fitted = _fit_sarimax(
+            series,
+            tuple(int(v) for v in order),
+            tuple(int(v) for v in seasonal_order) if seasonal_order else None,
+        )
+        forecast = fitted.forecast(horizon)
+        return [round(float(v), 4) for v in np.asarray(forecast)]
+
+    if model_type == "xgboost":
+        lags = int(params.get("lags", 7))
+        n_estimators = int(params.get("n_estimators", 200))
+        return _xgboost_recursive_forecast(series, horizon, lags, n_estimators)
+
+    if model_type == "prophet":
+        return _prophet_forecast(series, horizon, params)
+
+    # naive_seasonal и любые неизвестные модели
+    return [round(float(v), 4) for v in naive_forecast(series.values, horizon, season=season or 1)]
+
+
+def _xgboost_recursive_forecast(
+    series: pd.Series, horizon: int, lags: int, n_estimators: int
+) -> list[float]:
+    from xgboost import XGBRegressor
+
+    X, y = make_lag_features(series, lags=lags)
+    model = XGBRegressor(
+        n_estimators=n_estimators, max_depth=3, learning_rate=0.1, random_state=42
+    )
+    model.fit(X, y)
+
+    history = list(series.values)
+    predictions: list[float] = []
+    for _ in range(horizon):
+        window = np.asarray(history[-max(lags, 7) :], dtype="float64")
+        row = [window[-lag] for lag in range(1, lags + 1)] + [window[-7:].mean()]
+        pred = float(model.predict(np.asarray([row]))[0])
+        predictions.append(round(pred, 4))
+        history.append(pred)
+    return predictions
+
+
+def _prophet_forecast(series: pd.Series, horizon: int, params: dict[str, Any]) -> list[float]:
+    from prophet import Prophet
+
+    freq = series.index.freqstr or "D"
+    if freq.upper().startswith("24H"):
+        freq = "D"
+    model = Prophet(
+        seasonality_mode=params.get("seasonality_mode", "additive"),
+        yearly_seasonality="auto",
+        weekly_seasonality="auto",
+        daily_seasonality=False,
+    )
+    model.fit(pd.DataFrame({"ds": series.index, "y": series.values}))
+    future = model.make_future_dataframe(periods=horizon, freq=freq)
+    forecast = model.predict(future)
+    return [round(float(v), 4) for v in forecast.iloc[-horizon:]["yhat"].values]
 
 
 def fit_tabular_xgboost(

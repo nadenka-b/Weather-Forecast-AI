@@ -1,5 +1,5 @@
-# Минимальный стек Этапа 3: db (PostgreSQL) + app (методичка Step_3).
-# Redis, Qdrant, worker и nginx добавляются на Этапах 9–15.
+# Стек Этапа 12: db (PostgreSQL) + redis + app + worker (Celery).
+# Qdrant и nginx добавляются на Этапах 13–15.
 # Перед запуском: cp .env.example .env и задайте JWT_SECRET.
 
 services:
@@ -21,6 +21,17 @@ services:
     networks:
       - weather_internal
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - weather_internal
+
   app:
     build:
       context: ..
@@ -38,6 +49,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     command:
       - uvicorn
@@ -49,6 +62,35 @@ services:
       - --reload
       - --reload-dir
       - backend
+    networks:
+      - weather_internal
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infrastructure/Dockerfile
+    env_file:
+      - .env
+    environment:
+      PYTHONUNBUFFERED: 1
+      PYTHONDONTWRITEBYTECODE: 1
+    volumes:
+      - ../backend:/app/backend
+      - ../logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command:
+      - celery
+      - -A
+      - backend.worker.celery_app
+      - worker
+      - --loglevel=info
+      - --queues=forecast
+      - --concurrency=1
+    restart: unless-stopped
     networks:
       - weather_internal
 

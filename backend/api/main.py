@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.routes.auth import router as auth_router
+from backend.api.routes.forecast import router as forecast_router
 from backend.api.routes.health import router as health_router
 from backend.core.config import get_settings
 from backend.db.models import Base
@@ -59,4 +60,5 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(forecast_router)
 app.include_router(health_router)

@@ -39,7 +39,8 @@ async def health() -> JSONResponse:
         "services": {
             "database": {"healthy": db_ok, "error": db_error},
             "llm": {"provider": llm_provider, "healthy": llm_ok, "error": llm_error},
-            # redis / qdrant появятся на Этапах 11–12 (фоновые задачи, прод-RAG)
+            "tasks": {"backend": settings.task_backend, "healthy": True},
+            # redis / qdrant появятся с Celery-воркером и прод-RAG (Этапы 13–15)
         },
     }
     return JSONResponse(status_code=200 if healthy else 503, content=payload)

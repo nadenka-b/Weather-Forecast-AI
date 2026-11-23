@@ -14,7 +14,7 @@ import logging
 from typing import Any
 
 from backend.agents.base import LLMAgent
-from backend.core.llm.manager import LLMManager
+from backend.core.llm.manager import LLMManager, ToolDecision
 from backend.core.llm.tools import ToolRegistry, build_default_registry
 from backend.core.models import ForecastState
 from backend.timeseries.preprocessing import (
@@ -139,9 +139,19 @@ class ModelSelector(LLMAgent):
     # ------------------------------------------------------------------
     async def _process_timeseries(self, state: ForecastState) -> ForecastState:
         eda = _eda_summary(state)
-        decision = await self.manager.select_tool(
-            eda, self.registry, fewshot=await self._few_shot(state)
-        )
+        forced = state.metadata.get("forced_model")
+        if forced:
+            # Решение человека (HITL): модель задана явно, LLM не спрашиваем
+            decision = ToolDecision(
+                tool=forced["tool"],
+                arguments=forced.get("arguments") or {},
+                attempts=0,
+                used_fallback=False,
+            )
+        else:
+            decision = await self.manager.select_tool(
+                eda, self.registry, fewshot=await self._few_shot(state)
+            )
 
         values, dates = load_series(state.metadata)
         prepared = prepare_timeseries(

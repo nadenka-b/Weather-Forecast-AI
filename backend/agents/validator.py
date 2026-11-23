@@ -19,10 +19,9 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from scipy.stats import shapiro
-from statsmodels.stats.diagnostic import acorr_ljungbox
 
 from backend.agents.base import BaseAgent
+from backend.core.metrics import ljung_box_pvalue, shapiro_pvalue
 from backend.core.models import ForecastState
 
 logger = logging.getLogger(__name__)
@@ -60,9 +59,11 @@ class Validator(BaseAgent):
         warnings: list[str] = []
         meta = state.metadata
 
+        is_final = meta.get("predictions") is not None
         predictions = meta.get("predictions") or meta.get("val_pred")
         actuals = meta.get("val_true")
-        dates = meta.get("val_dates")
+        # даты: для финального прогноза — будущие даты горизонта, для валидации — val_dates
+        dates = meta.get("prediction_dates") if is_final else meta.get("val_dates")
 
         # --- 1. NaN и длина
         if not predictions:
@@ -70,7 +71,6 @@ class Validator(BaseAgent):
         else:
             # финальный прогноз горизонта (Этап 12) — строгая длина;
             # валидационный отрезок — достаточна одна точка
-            is_final = meta.get("predictions") is not None
             checks["predictions"] = self._check_predictions(
                 predictions,
                 state.horizon,
@@ -210,10 +210,8 @@ class Validator(BaseAgent):
 
         # Ljung-Box: автокорреляция остатков означает непойманную структуру
         n = len(residuals)
-        lags = min(10, max(1, n // 2))
-        if n >= 4:
-            lb = acorr_ljungbox(residuals, lags=[lags], return_df=True)
-            lb_pvalue = float(lb["lb_pvalue"].iloc[0])
+        lb_pvalue = ljung_box_pvalue(residuals)
+        if lb_pvalue is not None:
             result["ljung_box_pvalue"] = round(lb_pvalue, 4)
             if lb_pvalue < LJUNG_BOX_ALPHA:
                 errors.append(
@@ -221,8 +219,8 @@ class Validator(BaseAgent):
                 )
 
         # Shapiro-Wilk: нормальность остатков (менее критична -> warning)
-        if 3 <= n <= 5000:
-            sh_pvalue = float(shapiro(residuals).pvalue)
+        sh_pvalue = shapiro_pvalue(residuals)
+        if sh_pvalue is not None:
             result["shapiro_pvalue"] = round(sh_pvalue, 4)
             if sh_pvalue < SHAPIRO_ALPHA:
                 warnings.append(

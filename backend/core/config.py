@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     # Фоновые задачи / кэш (Этапы 11–14)
     redis_url: str = "redis://127.0.0.1:6379/0"
     cache_enabled: bool = True
+    # task_backend: inline — выполнение в процессе API (локальная разработка,
+    # без Redis); celery — воркер с брокером Redis (продакшен)
+    task_backend: str = "inline"
+    # inline-режим: выполнить задачу сразу в запросе (тесты, отладка)
+    task_eager: bool = False
 
     # Агентный цикл
     max_iterations: int = 3
@@ -63,6 +68,8 @@ class Settings(BaseSettings):
 
     # Данные
     data_dir: Path = BASE_DIR / "data"
+    uploads_dir: Path = BASE_DIR / "data" / "uploads"      # входные ряды задач
+    forecasts_dir: Path = BASE_DIR / "data" / "forecasts"  # файлы прогнозов
     knowledge_base_min_records: int = 1000
     glossary_min_terms: int = 500
 
