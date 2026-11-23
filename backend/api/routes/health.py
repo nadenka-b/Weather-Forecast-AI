@@ -1,7 +1,7 @@
 """Healthcheck-роуты.
 
 /healthz — liveness: жив ли процесс.
-/health  — readiness: готов ли принимать запросы (проверяет БД через SELECT 1).
+/health  — readiness: готов ли принимать запросы (БД через SELECT 1 + LLM).
 """
 import logging
 
@@ -25,24 +25,24 @@ async def healthz() -> dict:
 
 @router.get("/health")
 async def health() -> JSONResponse:
-    """Readiness-проба: доступна ли БД (200 — да, 503 — нет)."""
+    """Readiness-проба: БД и LLM доступны (200 — да, 503 — нет)."""
     settings = get_settings()
 
     db_ok, db_error = await check_database()
+    llm_ok, llm_error, llm_provider = await check_llm()
 
+    healthy = db_ok and llm_ok
     payload = {
-        "status": "healthy" if db_ok else "unhealthy",
+        "status": "healthy" if healthy else "unhealthy",
         "app": settings.app_name,
         "debug": settings.debug,
         "services": {
             "database": {"healthy": db_ok, "error": db_error},
-            # redis / qdrant / llm появятся на Этапах 10–11
+            "llm": {"provider": llm_provider, "healthy": llm_ok, "error": llm_error},
+            # redis / qdrant появятся на Этапах 11–12 (фоновые задачи, прод-RAG)
         },
     }
-    return JSONResponse(
-        status_code=200 if db_ok else 503,
-        content=payload,
-    )
+    return JSONResponse(status_code=200 if healthy else 503, content=payload)
 
 
 async def check_database() -> tuple[bool, str | None]:
@@ -54,3 +54,21 @@ async def check_database() -> tuple[bool, str | None]:
     except Exception as exc:  # noqa: BLE001 — любой сбой = нездоров
         logger.error("Database health check failed: %s", exc)
         return False, str(exc)
+
+
+async def check_llm() -> tuple[bool, str | None, str]:
+    """Доступность LLM-провайдера: (healthy, error, имя провайдера)."""
+    provider_name = get_settings().llm_provider.lower()
+    if provider_name == "stub":
+        return True, None, "stub"
+    try:
+        from backend.core.llm.manager import get_provider
+
+        provider = get_provider(provider_name)
+        if provider is None:
+            return False, "unknown provider", provider_name
+        ok, error = await provider.check_health()
+        return ok, error, provider_name
+    except Exception as exc:  # noqa: BLE001 — отсутствие пакета/сети = нездоров
+        logger.error("LLM health check failed: %s", exc)
+        return False, str(exc), provider_name

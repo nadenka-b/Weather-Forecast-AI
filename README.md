@@ -2,7 +2,7 @@
 
 Интеллектуальная система прогнозирования погодных временных рядов с **мультиагентной архитектурой**, **Agentic RAG** и строгой оценкой качества. Курсовой проект по дисциплине MLF-2026.
 
-> **Статус:** Этапы 1–9 выполнены: каркас, БД (8 таблиц), Docker (db + app), JWT-аутентификация, мультиагентная система (DataAnalyst / ModelSelector c Tool Calling / Validator / Critic + Supervisor), база знаний 1000 кейсов из Jena Climate и Daily Climate, справочник 578 терминов. 159+ тестов зелёные.
+> **Статус:** Этапы 1–11 выполнены: каркас, БД (8 таблиц), Docker (db + app), JWT-аутентификация, мультиагентная система (DataAnalyst / ModelSelector c Tool Calling / Validator / Critic + Supervisor), база знаний 1000 кейсов из Jena Climate и Daily Climate, справочник 578 терминов, гибридный RAG (BM25 + векторы + RRF), реальные LLM через LM Studio с трассировкой вызовов. 200+ тестов зелёные.
 
 ---
 
@@ -113,8 +113,14 @@ cp .env.example .env                    # настройки (по умолча�
 poetry run python run.py                # API на http://127.0.0.1:8000
 ```
 
-Проверки: `GET /healthz` — liveness, `GET /health` — статусы зависимостей,
+Проверки: `GET /healthz` — liveness, `GET /health` — статусы зависимостей (БД + LLM),
 `poetry run pytest` — тесты.
+
+**Режимы LLM** (`LLM_PROVIDER` в `.env`): `lm_studio` — основной, локальный OpenAI-совместимый
+сервер (LM Studio → Developer → Start Server, порт 1234, модель Qwen2.5-7B-Instruct);
+`vllm`, `hf_local` (transformers), `api` (OpenRouter и др.) — альтернативы;
+`stub` — без сети (тесты и офлайн-разработка: заглушки возвращают валидный Tool Call).
+Каждый вызов LLM пишется в таблицу `llm_calls` (модель, токены, latency, статус).
 
 Docker-стек Этапа 3 — PostgreSQL + приложение (оба сервиса проходят healthcheck):
 

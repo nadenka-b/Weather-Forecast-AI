@@ -1,13 +1,19 @@
-"""LLMManager — выбор инструмента через Tool Calling (Этапы 7 и 11).
+"""LLMManager — роутинг провайдеров и Tool Calling (Этапы 7 и 11).
 
-Этап 7: протокол диалога с LLM и надёжный парсинг ответа с fallback.
-Реальный вызов LLM (LM Studio / HF / внешний API, retry, подсчёт токенов,
-таблица llm_calls) подключается на Этапе 11 — до этого используется
-заглушка _stub_llm_call, которую тесты подменяют своей функцией.
+Роутинг по настройке LLM_PROVIDER (методичка Step_8):
+    lm_studio  — локальный OpenAI-совместимый сервер (основной режим);
+    vllm       — OpenAI-совместимый инференс-сервер;
+    hf_local   — transformers (Causal LM), запасной локальный режим;
+    api        — внешний API (OpenRouter и др.);
+    stub       — заглушка без сети (тесты, офлайн-разработка).
 
-Правило fallback (задание MLF): максимум 3 неудачные попытки получить
-валидный вызов инструмента, затем выбор по умолчанию — SARIMA
-с автоподбором порядка (fit_arima без order).
+Tool Calling: в запрос передаются JSON-схемы инструментов реестра; ответ
+(tool_calls или JSON в тексте) нормализуется и парсится. Fallback по заданию
+MLF: максимум 3 неудачные попытки (в т.ч. недоступный провайдер), затем
+правило по умолчанию — SARIMA с автоподбором порядка.
+
+Каждый вызов провайдера трассируется в llm_calls (токены, latency, статус);
+суммарные токены возвращаются в ToolDecision для агентных метрик.
 """
 from __future__ import annotations
 
@@ -15,12 +21,16 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any, Awaitable, Callable
 
 from backend.core.config import get_settings
 from backend.core.llm.tools import UnknownToolError, ToolRegistry
 
 logger = logging.getLogger(__name__)
+
+# Фиксированный seed для воспроизводимости ответов LLM
+DEFAULT_LLM_SEED = 42
 
 # Ответ LLM должен быть строго таким JSON (однострочно или в блоке кода)
 _RESPONSE_FORMAT = (
@@ -32,13 +42,17 @@ _LLMCall = Callable[[list[dict[str, str]]], Awaitable[str]]
 
 @dataclass
 class ToolDecision:
-    """Результат выбора инструмента: имя, аргументы, статистика попыток."""
+    """Результат выбора инструмента: имя, аргументы, статистика попыток и LLM."""
 
     tool: str
     arguments: dict[str, Any] = field(default_factory=dict)
     attempts: int = 1
     used_fallback: bool = False
     raw_response: str | None = None
+    tokens_in: int = 0
+    tokens_out: int = 0
+    latency_ms: float = 0.0
+    model: str | None = None
 
 
 def parse_tool_json(text: str) -> dict[str, Any] | None:
@@ -76,21 +90,79 @@ def parse_tool_json(text: str) -> dict[str, Any] | None:
 
 
 async def _stub_llm_call(messages: list[dict[str, str]]) -> str:
-    """Заглушка LLM до Этапа 11: валидный вызов ARIMA(1,1,1).
+    """Заглушка (LLM_PROVIDER=stub): валидный вызов ARIMA(1,1,1).
 
-    Явный order (а не автоподбор) — чтобы прогоны с заглушкой были быстрыми;
+    Явный order (а не автоподбор) — чтобы прогоны были быстрыми;
     fallback-правило (fit_arima без order) проверяется отдельными тестами.
     """
     return '{"tool": "fit_arima", "arguments": {"order": [1, 1, 1]}}'
 
 
+def get_provider(provider: str | None = None, agent_name: str | None = None):
+    """Роутинг по LLM_PROVIDER. None — заглушка (stub или неизвестное имя)."""
+    name = (provider or get_settings().llm_provider).lower()
+    if name == "lm_studio":
+        from backend.core.llm.providers.lm_studio import LMStudioProvider
+
+        return LMStudioProvider(agent_name=agent_name)
+    if name == "vllm":
+        from backend.core.llm.providers.vllm import VLLMProvider
+
+        return VLLMProvider(agent_name=agent_name)
+    if name == "api":
+        from backend.core.llm.providers.api import ExternalAPIProvider
+
+        return ExternalAPIProvider(agent_name=agent_name)
+    if name == "hf_local":
+        from backend.core.llm.providers.hf_local import HFLocalProvider
+
+        return HFLocalProvider(agent_name=agent_name)
+    if name != "stub":
+        logger.warning("Неизвестный LLM_PROVIDER=%r — используется заглушка", name)
+    return None
+
+
 class LLMManager:
     """Диалог с LLM: промпт со схемами инструментов -> ToolDecision."""
 
-    def __init__(self, llm_call: _LLMCall | None = None, max_attempts: int | None = None):
+    def __init__(
+        self,
+        llm_call: _LLMCall | None = None,
+        max_attempts: int | None = None,
+        provider: Any | None = None,
+    ):
         settings = get_settings()
-        self.llm_call = llm_call or _stub_llm_call
         self.max_attempts = max_attempts or settings.llm_max_fallback_attempts
+        # llm_call — внедрённая заглушка (тесты); иначе провайдер: явный
+        # объект или роутинг по настройкам
+        self._injected = llm_call
+        self._provider = (
+            provider
+            if provider is not None
+            else (None if llm_call is not None else get_provider())
+        )
+
+    @property
+    def uses_stub(self) -> bool:
+        return self._injected is not None or self._provider is None
+
+    # ------------------------------------------------------------------
+    # Вызов LLM
+    # ------------------------------------------------------------------
+    async def _invoke(
+        self,
+        messages: list[dict[str, str]],
+        tools: list[dict[str, Any]] | None = None,
+    ):
+        """Возвращает (текст, ответ провайдера | None для заглушки)."""
+        if self._injected is not None:
+            return await self._injected(messages), None
+        if self._provider is None:  # режим stub / неизвестный провайдер
+            return await _stub_llm_call(messages), None
+        response = await self._provider.complete(
+            messages, tools=tools, temperature=0.0, seed=DEFAULT_LLM_SEED
+        )
+        return response.text, response
 
     def _build_messages(
         self,
@@ -129,10 +201,27 @@ class LLMManager:
         """До max_attempts попыток получить валидный вызов; затем fallback."""
         messages = self._build_messages(eda_summary, registry, fewshot)
         last_raw: str | None = None
+        tokens_in = tokens_out = 0
+        latency_ms = 0.0
+        model: str | None = None
 
         for attempt in range(1, self.max_attempts + 1):
-            raw = await self.llm_call(messages)
+            try:
+                raw, response = await self._invoke(messages, tools=registry.schemas())
+            except Exception as exc:  # noqa: BLE001 — недоступный провайдер = неудачная попытка
+                logger.warning(
+                    "Попытка %d: провайдер LLM не ответил (%s: %s)",
+                    attempt, type(exc).__name__, exc,
+                )
+                raw, response = "", None
+
             last_raw = raw
+            if response is not None:
+                tokens_in += response.tokens_in or 0
+                tokens_out += response.tokens_out or 0
+                latency_ms += response.latency_ms
+                model = response.model
+
             parsed = parse_tool_json(raw)
             if parsed is not None:
                 try:
@@ -146,6 +235,10 @@ class LLMManager:
                         attempts=attempt,
                         used_fallback=False,
                         raw_response=raw,
+                        tokens_in=tokens_in,
+                        tokens_out=tokens_out,
+                        latency_ms=round(latency_ms, 2),
+                        model=model,
                     )
                 except UnknownToolError:
                     logger.warning("Попытка %d: неизвестный инструмент %r", attempt, parsed["tool"])
@@ -163,4 +256,34 @@ class LLMManager:
             attempts=self.max_attempts,
             used_fallback=True,
             raw_response=last_raw,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            latency_ms=round(latency_ms, 2),
+            model=model,
         )
+
+    async def complete(
+        self,
+        prompt: str,
+        system: str | None = None,
+        max_tokens: int | None = None,
+    ) -> str:
+        """Простое текстовое дополнение без tool-протокола (для Critic)."""
+        messages: list[dict[str, str]] = (
+            [{"role": "system", "content": system}] if system else []
+        )
+        messages.append({"role": "user", "content": prompt})
+        if self._injected is not None:
+            return await self._injected(messages)
+        if self._provider is None:  # режим stub / неизвестный провайдер
+            return await _stub_llm_call(messages)
+        response = await self._provider.complete(
+            messages, temperature=0.0, seed=DEFAULT_LLM_SEED, max_tokens=max_tokens
+        )
+        return response.text
+
+
+@lru_cache
+def get_llm_manager() -> LLMManager:
+    """Один менеджер на процесс (роутинг по настройкам)."""
+    return LLMManager()

@@ -14,6 +14,7 @@ from backend.api.routes.health import router as health_router
 from backend.core.config import get_settings
 from backend.db.models import Base
 from backend.db.session import async_engine
+from backend.utils.http_client import close_http_clients
 from backend.utils.logging import setup_logging
 
 settings = get_settings()
@@ -39,6 +40,7 @@ async def lifespan(app: FastAPI):
 
     logger.info("%s stopped", settings.app_name)
     await async_engine.dispose()
+    await close_http_clients()
 
 
 app = FastAPI(

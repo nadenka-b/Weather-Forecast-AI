@@ -26,6 +26,9 @@ def test_health_database_healthy() -> None:
     assert body["status"] == "healthy"
     assert body["services"]["database"]["healthy"] is True
     assert body["services"]["database"]["error"] is None
+    # LLM-проверка (Этап 11): в тестах режим stub -> здоров без сети
+    assert body["services"]["llm"]["healthy"] is True
+    assert body["services"]["llm"]["provider"] == "stub"
 
 
 def test_lifespan_creates_tables() -> None:

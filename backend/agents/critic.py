@@ -19,6 +19,7 @@ import re
 from typing import Any, Awaitable, Callable
 
 from backend.agents.base import LLMAgent
+from backend.core.config import get_settings
 from backend.core.models import ForecastState
 
 logger = logging.getLogger(__name__)
@@ -80,19 +81,29 @@ def extract_judgment_text(text: str) -> dict[str, Any] | None:
     return judgment
 
 
-async def _default_judge_stub(prompt: str) -> str:
-    """Заглушка LLM до Этапа 11 (заменяется реальным вызовом LM Studio)."""
-    logger.info("Critic: judge-заглушка (реальная LLM — Этап 11), промпт %d симв.",
-                len(prompt))
+def _neutral_judgment(reasoning: str) -> str:
+    """Нейтральная оценка 5.0 (fallback / режим stub)."""
     return json.dumps(
-        {
-            "score": 5.0,
-            "adequacy": 5.0,
-            "reasoning": "LLM не подключена (Этап 11) — нейтральная оценка",
-            "suggestions": [],
-        },
+        {"score": 5.0, "adequacy": 5.0, "reasoning": reasoning, "suggestions": []},
         ensure_ascii=False,
     )
+
+
+async def _judge_via_llm(prompt: str) -> str:
+    """Реальный вызов LLM (LM Studio / vLLM / HF / API) через LLMManager.
+
+    Вызов трассируется в llm_calls; Tool Calling здесь не нужен — формат JSON
+    задан в промпте и парсится parse_judgment_json.
+    """
+    from backend.core.llm.manager import get_llm_manager
+
+    return await get_llm_manager().complete(prompt, max_tokens=400)
+
+
+async def _stub_judge(prompt: str) -> str:
+    """LLM_PROVIDER=stub: нейтральная оценка без сети (тесты, офлайн)."""
+    logger.info("Critic: режим stub — нейтральная оценка (промпт %d симв.)", len(prompt))
+    return _neutral_judgment("LLM не подключена (режим stub) — нейтральная оценка")
 
 
 class Critic(LLMAgent):
@@ -100,7 +111,12 @@ class Critic(LLMAgent):
 
     def __init__(self, judge: JudgeCall | None = None):
         super().__init__(name="critic", description="LLM-as-a-Judge для выбора модели")
-        self.judge = judge or _default_judge_stub
+        if judge is not None:
+            self.judge = judge
+        elif get_settings().llm_provider.lower() == "stub":
+            self.judge = _stub_judge
+        else:
+            self.judge = _judge_via_llm
 
     # ------------------------------------------------------------------
     # Промпт

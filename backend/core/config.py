@@ -27,12 +27,25 @@ class Settings(BaseSettings):
     # База данных (local: SQLite, prod: PostgreSQL)
     database_url: str = f"sqlite+aiosqlite:///{BASE_DIR / 'weather_forecast.db'}"
 
-    # LLM: lm_studio | hf_local | api (Этап 11)
+    # LLM: lm_studio | vllm | hf_local | api | stub (Этап 11)
     # LM Studio — локальный OpenAI-совместимый сервер (порт 1234 по умолчанию)
     llm_provider: str = "lm_studio"
     lm_studio_base_url: str = "http://127.0.0.1:1234/v1"
     lm_studio_model: str = "qwen2.5-7b-instruct"
     llm_max_fallback_attempts: int = 3
+    # vLLM — OpenAI-совместимый сервер для инференса (бонус, продвинутый режим)
+    vllm_base_url: str = "http://127.0.0.1:8000/v1"
+    vllm_model: str = "qwen2.5-7b-instruct"
+    # HuggingFace Transformers — запасной локальный режим (Causal LM)
+    hf_local_model: str = "Qwen/Qwen2.5-0.5B-Instruct"
+    # Внешний API (OpenRouter и др., бонус): OpenAI-совместимый
+    llm_api_base_url: str = "https://openrouter.ai/api/v1"
+    llm_api_key: str = ""
+    llm_api_model: str = "qwen/qwen2.5-7b-instruct"
+    # Таймаут LLM-запроса: холодный старт модели может занять минуты
+    llm_timeout: float = 300.0
+    llm_max_retries: int = 3
+    llm_retry_delay: float = 1.0
 
     # RAG (Этап 10)
     qdrant_url: str = "http://127.0.0.1:6333"

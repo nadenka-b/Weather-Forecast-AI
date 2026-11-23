@@ -27,6 +27,7 @@ from backend.agents.reasoning import (
 )
 from backend.core.config import get_settings
 from backend.core.models import ForecastState
+from backend.utils.llm_logger import current_agent_name, current_request_id
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +145,7 @@ class Supervisor:
                 parameters=parameters,
                 input_summary=f"series={state.series_id} iter={state.iteration}",
             )
+        agent_token = current_agent_name.set(name)
         try:
             state = await agent.process(state)
         except Exception as exc:  # noqa: BLE001 — сбой агента не роняет цикл
@@ -154,6 +156,8 @@ class Supervisor:
                 )
             state.metadata.setdefault("agent_errors", {})[name] = str(exc)[:200]
             return state
+        finally:
+            current_agent_name.reset(agent_token)
 
         if self._reasoning and step_id:
             await self._reasoning.finish(
@@ -198,6 +202,18 @@ class Supervisor:
         state.editor_changed = False
         state.hitl_requested = False
         state.iteration = 0
+
+        # request_id для трассировки LLM-вызовов (llm_calls сшивается с reasoning_logs)
+        request_token = current_request_id.set(state.log_id)
+        try:
+            return await self._run_pipeline(state, root_id)
+        finally:
+            current_request_id.reset(request_token)
+
+    async def _run_pipeline(self, state: ForecastState, root_id: str) -> ForecastState:
+        """Основной пайплайн и цикл коррекции (вызывается из process)."""
+        reasoning = self._reasoning
+        assert reasoning is not None
 
         # --- Основной пайплайн: analyst -> selector -> validator -> critic
         for name in PIPELINE:
