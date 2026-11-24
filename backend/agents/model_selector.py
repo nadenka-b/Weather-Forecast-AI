@@ -210,6 +210,14 @@ class ModelSelector(LLMAgent):
         state.metadata["selected_tool"] = decision.tool
         state.metadata["tool_attempts"] = decision.attempts
         state.metadata["used_fallback"] = decision.used_fallback
+        # расход LLM — для агентных метрик run_eval (Этап 13)
+        state.metadata["llm_usage"] = {
+            "tokens_in": decision.tokens_in,
+            "tokens_out": decision.tokens_out,
+            "latency_ms": decision.latency_ms,
+            "attempts": decision.attempts,
+            "model": decision.model,
+        }
         if decision.used_fallback:
             state.metadata.setdefault(
                 "critic_suggestions",

@@ -182,6 +182,11 @@ class Critic(LLMAgent):
 
         state.critic_score = score
         state.critic_reasoning = str(judgment.get("reasoning", ""))[:1000]
+        # расход LLM судьи — для агентных метрик run_eval (Этап 13)
+        if self.judge is _judge_via_llm:
+            from backend.core.llm.manager import get_llm_manager
+
+            state.metadata["critic_usage"] = dict(get_llm_manager().last_usage)
         state.metadata["critic_adequacy"] = (
             max(0.0, min(10.0, float(adequacy))) if adequacy is not None else None
         )

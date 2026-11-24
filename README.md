@@ -2,7 +2,7 @@
 
 Интеллектуальная система прогнозирования погодных временных рядов с **мультиагентной архитектурой**, **Agentic RAG** и строгой оценкой качества. Курсовой проект по дисциплине MLF-2026.
 
-> **Статус:** Этапы 1–12 выполнены: каркас, БД (9 таблиц), Docker (db + redis + app + worker), JWT-аутентификация, мультиагентная система (DataAnalyst / ModelSelector c Tool Calling / Validator / Critic + Supervisor), база знаний 1000 кейсов из Jena Climate и Daily Climate, справочник 578 терминов, гибридный RAG (BM25 + векторы + RRF), LLM через LM Studio с трассировкой вызовов, REST API прогноза с фоновыми задачами и HITL. 240+ тестов зелёные.
+> **Статус:** Этапы 1–13 выполнены: каркас, БД, Docker, JWT-аутентификация, мультиагентная система (DataAnalyst / ModelSelector c Tool Calling / Validator / Critic + Supervisor), база знаний 1000 кейсов из Jena Climate и Daily Climate, справочник 578 терминов, гибридный RAG (BM25 + векторы + RRF), LLM через LM Studio с трассировкой вызовов, REST API прогноза с фоновыми задачами и HITL, оценка качества (`run_eval.py`: режимы, горизонты, доли данных, агентные метрики, стат. значимость). 270+ тестов зелёные.
 
 ---
 
@@ -140,6 +140,23 @@ curl -s -X POST localhost:8000/api/v1/forecast/$TASK/hitl -H "Authorization: Bea
 
 Фоновые задачи: `TASK_BACKEND=inline` — выполнение в процессе API (локальная разработка, без Redis);
 `celery` — воркер с брокером Redis (сервис `worker` в docker-compose).
+
+**Оценка качества** (Этап 13) — `scripts/run_eval.py` на holdout-наборе (`data/processed/test_set.jsonl`):
+
+```bash
+# основной прогон: режимы baseline / rag / agents × горизонты × доли данных
+poetry run python scripts/run_eval.py --num-series 50 --horizons 7,14 --data-fractions 1.0
+# кривая «точность vs объём данных»
+poetry run python scripts/run_eval.py --num-series 20 --horizons 14 \
+  --data-fractions 0.1,0.2,0.5,1.0 --mode baseline --out-dir data/eval/fractions
+```
+
+Режимы: `baseline` — классика без LLM (сетка моделей), `rag` — выбор модели по кейсам базы знаний,
+`agents` — полный цикл агентов, `foundation` — TS Foundation Models (бонус). Метрики MAE/RMSE/MAPE/WAPE/MASE
++ агентные (итерации, доля HITL, токены, время); сравнение режимов — Diebold-Mariano, Wilcoxon,
+bootstrap-CI, paired t-test. Результаты: `data/eval/` (`results.jsonl`, `summary.csv`, `comparisons.json`,
+`eval.log`) и в БД (`evaluation_results`, `model_comparisons`). API: `GET /api/v1/evaluate/compare`,
+`POST /api/v1/evaluate/batch`, `GET /api/v1/evaluate/runs/{run_id}`, `GET /api/v1/evaluate/results`.
 
 Docker-стек Этапа 3 — PostgreSQL + приложение (оба сервиса проходят healthcheck):
 

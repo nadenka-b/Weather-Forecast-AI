@@ -89,3 +89,38 @@ class HitlRequest(BaseModel):
     model_params: dict[str, Any] | None = Field(None, description="Гиперпараметры новой модели")
     horizon: int | None = Field(None, ge=1, le=60, description="Для change_horizon")
     comment: str | None = None
+
+
+# ============================================================================
+# Оценка качества (Этап 13)
+# ============================================================================
+EvalMode = Literal["baseline", "rag", "agents", "foundation"]
+
+
+class EvaluateBatchRequest(BaseModel):
+    """Параметры пакетного запуска оценки (POST /api/v1/evaluate/batch)."""
+
+    modes: list[EvalMode] = Field(default_factory=lambda: ["baseline", "rag", "agents"])
+    horizons: list[int] = Field(default_factory=lambda: [14], min_length=1)
+    data_fractions: list[float] = Field(default_factory=lambda: [1.0], min_length=1)
+    num_series: int = Field(10, ge=1, le=50, description="Число тестовых окон (20/50/100)")
+    fast: bool = Field(True, description="Сокращённая сетка baseline (naive + ARIMA)")
+    seed: int = 42
+
+
+class EvaluationRunResponse(BaseModel):
+    """Запуск оценки: статус, параметры, сводка, сравнения."""
+
+    run_id: str
+    status: str
+    params: dict[str, Any] | None = None
+    summary: list[dict[str, Any]] | None = None
+    comparisons: list[dict[str, Any]] | None = None
+    n_records: int | None = None
+    error: str | None = None
+
+
+class EvaluationAccepted(BaseModel):
+    run_id: str
+    status: str
+    status_url: str

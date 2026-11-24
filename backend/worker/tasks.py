@@ -24,12 +24,15 @@ from backend.core.config import get_settings
 logger = logging.getLogger(__name__)
 
 FORECAST_TASK_NAME = "forecast.forecast_task"
+EVALUATE_TASK_NAME = "evaluate.evaluate_model_task"
 
 
 class TaskRunner(Protocol):
     """Контракт раннера: поставить задачу на выполнение."""
 
     async def enqueue(self, task_id: str) -> None: ...
+
+    async def enqueue_eval(self, run_id: str) -> None: ...
 
 
 class InlineTaskRunner:
@@ -49,6 +52,16 @@ class InlineTaskRunner:
         self._background.add(task)
         task.add_done_callback(self._background.discard)
 
+    async def enqueue_eval(self, run_id: str) -> None:
+        from backend.evaluation.service import run_evaluation_run
+
+        if self.eager:
+            await run_evaluation_run(run_id)
+            return
+        task = asyncio.create_task(self._run_eval(run_id))
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+
     async def _run(self, task_id: str) -> None:
         from backend.services.pipeline import run_forecast
 
@@ -56,6 +69,14 @@ class InlineTaskRunner:
             await run_forecast(task_id)
         except Exception:  # noqa: BLE001 — фоновая задача не должна ронять loop
             logger.exception("Background forecast task %s crashed", task_id)
+
+    async def _run_eval(self, run_id: str) -> None:
+        from backend.evaluation.service import run_evaluation_run
+
+        try:
+            await run_evaluation_run(run_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("Background evaluation run %s crashed", run_id)
 
 
 class CeleryTaskRunner:
@@ -66,6 +87,12 @@ class CeleryTaskRunner:
 
         celery_app.send_task(FORECAST_TASK_NAME, args=[task_id], queue="forecast")
         logger.info("Task %s sent to Celery queue 'forecast'", task_id)
+
+    async def enqueue_eval(self, run_id: str) -> None:
+        from backend.worker.celery_app import celery_app
+
+        celery_app.send_task(EVALUATE_TASK_NAME, args=[run_id], queue="forecast")
+        logger.info("Evaluation run %s sent to Celery queue 'forecast'", run_id)
 
 
 def get_task_runner() -> TaskRunner:
@@ -107,3 +134,10 @@ def forecast_task(task_id: str) -> Any:
     from backend.services.pipeline import run_forecast
 
     return run_async(run_forecast(task_id))
+
+
+def evaluate_model_task(run_id: str) -> Any:
+    """Тело Celery-задачи: выполнить запуск оценки по run_id."""
+    from backend.evaluation.service import run_evaluation_run
+
+    return run_async(run_evaluation_run(run_id))

@@ -362,3 +362,45 @@ class TestTaskRunners:
         from backend.worker.celery_app import celery_app
 
         assert "forecast.forecast_task" in celery_app.tasks
+
+
+# ============================================================================
+# Схема БД: таблицы создаются в любой точке входа (регрессия: сводка оценки
+# не сохранилась, потому что в старой БД не было evaluation_runs)
+# ============================================================================
+class TestEnsureTables:
+    async def test_ensure_tables_once_creates_missing_tables(self, monkeypatch):
+        import backend.db.session as db_session_module
+        from sqlalchemy import text
+        from sqlalchemy.exc import OperationalError
+
+        from backend.db.session import ensure_tables_once
+
+        engine = create_async_engine(
+            "sqlite+aiosqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        session_local = async_sessionmaker(
+            bind=engine, class_=AsyncSession, expire_on_commit=False
+        )
+        monkeypatch.setattr(db_session_module, "AsyncSessionLocal", session_local)
+        monkeypatch.setattr(db_session_module, "async_engine", engine)
+        monkeypatch.setattr(db_session_module, "_ready_engine_ref", None)
+
+        async def table_names() -> set:
+            async with session_local() as session:
+                rows = await session.execute(
+                    text("SELECT name FROM sqlite_master WHERE type='table'")
+                )
+                return {row[0] for row in rows.all()}
+
+        assert await table_names() == set()  # пустая БД
+        await ensure_tables_once()
+        tables = await table_names()
+        assert {
+            "users", "knowledge_base", "glossary", "cache", "evaluation_results",
+            "model_comparisons", "reasoning_logs", "llm_calls", "forecast_tasks",
+            "evaluation_runs",
+        } <= tables
+        await engine.dispose()

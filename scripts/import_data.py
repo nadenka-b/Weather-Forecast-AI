@@ -19,8 +19,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))  # прямой запуск: python scripts/...
 
 from backend.data import knowledge_base  # noqa: E402
-from backend.db.models import Base  # noqa: E402
-from backend.db.session import async_engine  # noqa: E402
+from backend.db.session import ensure_tables_once  # noqa: E402
 
 PROCESSED_DIR = BASE_DIR / "data" / "processed"
 
@@ -37,9 +36,8 @@ def read_jsonl(path: Path) -> list[dict]:
 
 
 async def run(args: argparse.Namespace) -> int:
-    # таблицы создаются при отсутствии (локальный режим без Alembic)
-    async with async_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # таблицы создаются/дополняются при отсутствии (локальный режим без Alembic)
+    await ensure_tables_once()
 
     if args.what in ("all", "kb"):
         cases = read_jsonl(args.kb_path)

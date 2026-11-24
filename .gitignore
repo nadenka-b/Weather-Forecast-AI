@@ -19,6 +19,7 @@ data/processed/
 data/cache/
 data/uploads/
 data/forecasts/
+data/eval/
 *.db
 *.sqlite3
 eval.log

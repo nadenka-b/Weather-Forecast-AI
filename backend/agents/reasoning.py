@@ -76,6 +76,8 @@ class DbLogStore:
     """Хранилище в таблице reasoning_logs (async SQLAlchemy).
 
     На старте шага — INSERT (status='running'), на завершении — UPDATE.
+    Сбой трассировки (БД недоступна, нет таблицы) не роняет пайплайн:
+    ошибка пишется в лог, основной путь продолжает работать.
     """
 
     async def write(self, record: dict[str, Any]) -> None:
@@ -83,32 +85,37 @@ class DbLogStore:
 
         from backend.db.session import AsyncSessionLocal
 
-        async with AsyncSessionLocal() as session:
-            # write идёт после flush родителя — parent уже в БД
-            exists = await session.execute(
-                select(ReasoningLog.id).where(ReasoningLog.id == record["id"])
-            )
-            if exists.scalar_one_or_none():
-                return
-            session.add(ReasoningLog(**record))
-            await session.commit()
+        try:
+            async with AsyncSessionLocal() as session:
+                exists = await session.execute(
+                    select(ReasoningLog.id).where(ReasoningLog.id == record["id"])
+                )
+                if exists.scalar_one_or_none():
+                    return
+                session.add(ReasoningLog(**record))
+                await session.commit()
+        except Exception as exc:  # noqa: BLE001 — трассировка не должна ломать пайплайн
+            logger.error("reasoning_logs write failed: %s", exc)
 
     async def update(self, log_id: str, fields: dict[str, Any]) -> None:
         from sqlalchemy import select
 
         from backend.db.session import AsyncSessionLocal
 
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(
-                select(ReasoningLog).where(ReasoningLog.id == log_id)
-            )
-            log = result.scalar_one_or_none()
-            if log is None:
-                logger.warning("reasoning_logs entry %s not found", log_id)
-                return
-            for key, value in fields.items():
-                setattr(log, key, value)
-            await session.commit()
+        try:
+            async with AsyncSessionLocal() as session:
+                result = await session.execute(
+                    select(ReasoningLog).where(ReasoningLog.id == log_id)
+                )
+                log = result.scalar_one_or_none()
+                if log is None:
+                    logger.warning("reasoning_logs entry %s not found", log_id)
+                    return
+                for key, value in fields.items():
+                    setattr(log, key, value)
+                await session.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.error("reasoning_logs update failed: %s", exc)
 
 
 class ReasoningLogger:

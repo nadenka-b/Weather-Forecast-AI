@@ -239,6 +239,32 @@ class ForecastTask(Base):
 
 
 # ============================================================================
+# EvaluationRuns — фоновые запуски оценки (Этап 13; POST /api/v1/evaluate/batch)
+# ============================================================================
+class EvaluationRun(Base):
+    """Пакетный запуск оценки: параметры, сводка, сравнения, статус."""
+
+    __tablename__ = "evaluation_runs"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    status = Column(String, default="pending", nullable=False)  # pending|running|completed|failed
+    user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    params = Column(JSON, nullable=True)
+    summary = Column(JSON, nullable=True)
+    comparisons = Column(JSON, nullable=True)
+    n_records = Column(Integer, nullable=True)
+    error = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_evaluation_runs_status", "status"),
+    )
+
+
+# ============================================================================
 # ReasoningLogs — иерархический лог рассуждений агентов
 # ============================================================================
 class ReasoningLog(Base):

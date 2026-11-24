@@ -319,10 +319,14 @@ class Supervisor:
         }
 
 
-async def build_supervisor(max_iterations: int | None = None) -> Supervisor:
+async def build_supervisor(
+    max_iterations: int | None = None, use_db_logs: bool = True
+) -> Supervisor:
     """Продакшен-сборка (Этапы 10–12): все реальные агенты + RAG-поиск кейсов
     + reasoning-лог в таблице reasoning_logs (требование задания MLF).
 
+    use_db_logs=False — лог только в памяти (прогоны оценки run_eval, чтобы
+    не засорять reasoning_logs сотнями служебных записей).
     Editor подключается на Этапе 14 (HITL-цикл коррекции).
     """
     from backend.agents.critic import Critic
@@ -348,5 +352,5 @@ async def build_supervisor(max_iterations: int | None = None) -> Supervisor:
     return Supervisor(
         agents=agents,
         max_iterations=max_iterations,
-        log_store=DbLogStore(),
+        log_store=DbLogStore() if use_db_logs else InMemoryLogStore(),
     )

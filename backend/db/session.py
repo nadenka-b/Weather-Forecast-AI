@@ -9,9 +9,11 @@
 не создавать новый loop на каждую задачу.
 """
 import logging
+import weakref
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
@@ -43,3 +45,28 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI-зависимость: выдаёт сессию и закрывает её после ответа."""
     async with AsyncSessionLocal() as session:
         yield session
+
+
+_ready_engine_ref: "weakref.ReferenceType[AsyncEngine] | None" = None
+
+
+async def ensure_tables() -> None:
+    """Создаёт отсутствующие таблицы (идемпотентно)."""
+    from backend.db.models import Base
+
+    async with async_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+
+async def ensure_tables_once() -> None:
+    """ensure_tables один раз на каждый engine.
+
+    Вызывается на старте API (lifespan), в воркере и в скриптах: схема БД
+    дополняется новыми таблицами, даже если сама БД создана раньше.
+    Флаг привязан к engine через слабую ссылку — смена engine (тесты,
+    переподключение) запускает проверку заново.
+    """
+    global _ready_engine_ref
+    if _ready_engine_ref is None or _ready_engine_ref() is not async_engine:
+        await ensure_tables()
+        _ready_engine_ref = weakref.ref(async_engine)

@@ -23,6 +23,7 @@ from backend.core.config import get_settings
 from backend.core.llm.tools import build_default_registry
 from backend.core.models import ForecastState
 from backend.data.tasks import TaskRepository
+from backend.db.session import ensure_tables_once
 from backend.timeseries.classical import predict_final
 from backend.timeseries.preprocessing import load_series, prepare_timeseries
 
@@ -32,9 +33,16 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # Основной сценарий
 # ============================================================================
-async def perform_forecast(state: ForecastState) -> ForecastState:
-    """Полный цикл: агенты -> финальный прогноз -> валидация финального прогноза."""
-    supervisor = await build_supervisor()
+async def perform_forecast(
+    state: ForecastState, supervisor: Any | None = None
+) -> ForecastState:
+    """Полный цикл: агенты -> финальный прогноз -> валидация финального прогноза.
+
+    supervisor можно передать извне (run_eval переиспользует один экземпляр
+    с уже собранным RAG на серию прогонов вместо сборки на каждую задачу).
+    """
+    if supervisor is None:
+        supervisor = await build_supervisor()
     state = await supervisor.process(state)
 
     if state.task_type == "timeseries":
@@ -110,6 +118,7 @@ async def run_forecast(task_id: str) -> ForecastState | None:
     чтобы фоновый раннер не падал.
     """
     repo = TaskRepository()
+    await ensure_tables_once()  # воркер/скрипт могли стартовать раньше обновления схемы
     task = await repo.get(task_id)
     if task is None:
         raise LookupError(f"Задача {task_id} не найдена")

@@ -133,6 +133,8 @@ class LLMManager:
     ):
         settings = get_settings()
         self.max_attempts = max_attempts or settings.llm_max_fallback_attempts
+        # расход последнего вызова (токены/latency) — для агентных метрик
+        self.last_usage: dict[str, Any] = {"tokens_in": 0, "tokens_out": 0, "latency_ms": 0.0}
         # llm_call — внедрённая заглушка (тесты); иначе провайдер: явный
         # объект или роутинг по настройкам
         self._injected = llm_call
@@ -280,6 +282,11 @@ class LLMManager:
         response = await self._provider.complete(
             messages, temperature=0.0, seed=DEFAULT_LLM_SEED, max_tokens=max_tokens
         )
+        self.last_usage = {
+            "tokens_in": response.tokens_in or 0,
+            "tokens_out": response.tokens_out or 0,
+            "latency_ms": response.latency_ms,
+        }
         return response.text
 
 

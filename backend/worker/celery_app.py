@@ -29,6 +29,12 @@ celery_app.conf.update(
     broker_connection_retry_on_startup=True,
 )
 
-from backend.worker.tasks import FORECAST_TASK_NAME, forecast_task  # noqa: E402
+from backend.worker.tasks import (  # noqa: E402
+    EVALUATE_TASK_NAME,
+    FORECAST_TASK_NAME,
+    evaluate_model_task,
+    forecast_task,
+)
 
 celery_app.task(name=FORECAST_TASK_NAME)(forecast_task)
+celery_app.task(name=EVALUATE_TASK_NAME)(evaluate_model_task)
