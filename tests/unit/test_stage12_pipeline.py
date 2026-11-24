@@ -177,9 +177,11 @@ class TestPipeline:
         )
         state = await pipeline.perform_forecast(state)
 
-        assert state.model_type == "arima"             # stub-выбор ARIMA(1,1,1)
+        # stub-выбор ARIMA(1,1,1); Editor может усилить модель до SARIMA
+        assert state.model_type in ("arima", "sarima")
         assert state.metadata["supervisor"]["stopped_reason"] in (
-            "converged", "editor_not_registered",
+            "converged", "editor_not_registered", "no_change",
+            "max_iterations", "rollback_regression",
         )
         # финальный прогноз построен и провалидирован
         assert len(state.metadata["predictions"]) == 14
@@ -325,7 +327,7 @@ class TestTaskRunners:
         sent = []
 
         class FakeCelery:
-            def send_task(self, name, args=None, queue=None):
+            def send_task(self, name, args=None, kwargs=None, queue=None):
                 sent.append((name, args, queue))
 
         import backend.worker.celery_app as celery_module

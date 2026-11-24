@@ -151,6 +151,56 @@ class LLMManager:
     # ------------------------------------------------------------------
     # Вызов LLM
     # ------------------------------------------------------------------
+    async def _provider_call(
+        self,
+        messages: list[dict[str, str]],
+        tools: list[dict[str, Any]] | None = None,
+        temperature: float = 0.0,
+        seed: int | None = DEFAULT_LLM_SEED,
+        max_tokens: int | None = None,
+    ):
+        """Вызов провайдера с кэшированием (CACHE_ENABLED, таблица cache).
+
+        При попадании LLM не вызывается: токены 0, latency 0, finish_reason='cache'.
+        Ключ — хэш модели, сообщений, схем инструментов и параметров генерации.
+        """
+        assert self._provider is not None
+        cache_key = None
+        if get_settings().cache_enabled:
+            from backend.data.cache import cache_manager
+
+            cache_key = cache_manager.make_key(
+                "llm", self._provider.name, getattr(self._provider, "model", None),
+                messages, tools, temperature, seed, max_tokens,
+            )
+            cached = await cache_manager.get(cache_key, model_used="llm")
+            if cached is not None:
+                try:
+                    payload = json.loads(cached)
+                except (json.JSONDecodeError, TypeError):
+                    payload = None
+                if isinstance(payload, dict) and "text" in payload:
+                    from backend.core.llm.providers.openai_compatible import LLMResponse
+
+                    logger.debug("LLM cache hit for %s", self._provider.name)
+                    return LLMResponse(
+                        text=payload["text"], model=payload.get("model") or getattr(self._provider, "model", "cache"),
+                        latency_ms=0.0, finish_reason="cache",
+                    )
+
+        response = await self._provider.complete(
+            messages, tools=tools, temperature=temperature, seed=seed, max_tokens=max_tokens
+        )
+        if cache_key is not None:
+            from backend.data.cache import cache_manager
+
+            await cache_manager.set(
+                cache_key,
+                json.dumps({"text": response.text, "model": response.model}, ensure_ascii=False),
+                model_used="llm",
+            )
+        return response
+
     async def _invoke(
         self,
         messages: list[dict[str, str]],
@@ -161,9 +211,7 @@ class LLMManager:
             return await self._injected(messages), None
         if self._provider is None:  # режим stub / неизвестный провайдер
             return await _stub_llm_call(messages), None
-        response = await self._provider.complete(
-            messages, tools=tools, temperature=0.0, seed=DEFAULT_LLM_SEED
-        )
+        response = await self._provider_call(messages, tools=tools)
         return response.text, response
 
     def _build_messages(
@@ -279,9 +327,7 @@ class LLMManager:
             return await self._injected(messages)
         if self._provider is None:  # режим stub / неизвестный провайдер
             return await _stub_llm_call(messages)
-        response = await self._provider.complete(
-            messages, temperature=0.0, seed=DEFAULT_LLM_SEED, max_tokens=max_tokens
-        )
+        response = await self._provider_call(messages, max_tokens=max_tokens)
         self.last_usage = {
             "tokens_in": response.tokens_in or 0,
             "tokens_out": response.tokens_out or 0,

@@ -124,3 +124,29 @@ class EvaluationAccepted(BaseModel):
     run_id: str
     status: str
     status_url: str
+
+
+# ============================================================================
+# HITL и Active Learning (Этап 14)
+# ============================================================================
+class ConfirmRequest(BaseModel):
+    """Подтверждение прогноза из очереди (опционально — с правкой модели)."""
+
+    model_type: str | None = Field(
+        None, description="Правка эксперта: fit_arima | fit_prophet | fit_xgboost"
+    )
+    model_params: dict[str, Any] | None = None
+    comment: str | None = None
+
+
+class RejectRequest(BaseModel):
+    reason: str | None = None
+
+
+class CorrectionRequest(BaseModel):
+    """Сохранить правку/комментарий эксперта без смены статуса задачи."""
+
+    task_id: str
+    correction: dict[str, Any] | None = None
+    comment: str | None = None
+    add_to_kb: bool = Field(False, description="Добавить кейс задачи в базу знаний")

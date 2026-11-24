@@ -11,6 +11,7 @@ State хранится по ссылке (task_id): снимок ForecastState �
 """
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -64,9 +65,33 @@ async def finalize_forecast(state: ForecastState) -> None:
     series: pd.Series = prepared["series"]
 
     season = (state.diagnostics or {}).get("seasonal_period")
-    predictions = predict_final(
-        series, state.horizon, state.model_type, state.model_params, season
-    )
+
+    # Кэш прогнозов (Этап 14): тот же ряд + горизонт + модель + параметры
+    predictions: list[float] | None = None
+    cache_key = None
+    if get_settings().cache_enabled:
+        from backend.data.cache import cache_manager
+
+        cache_key = cache_manager.make_key(
+            "forecast", [round(float(v), 6) for v in series.values], state.horizon,
+            state.model_type, state.model_params, season,
+        )
+        cached = await cache_manager.get(cache_key, model_used="forecast")
+        if cached:
+            try:
+                candidate = json.loads(cached)
+                if isinstance(candidate, list) and len(candidate) == state.horizon:
+                    predictions = candidate
+                    logger.debug("Forecast cache hit for task %s", state.task_id)
+            except (json.JSONDecodeError, TypeError):
+                predictions = None
+
+    if predictions is None:
+        predictions = predict_final(
+            series, state.horizon, state.model_type, state.model_params, season
+        )
+        if cache_key is not None:
+            await cache_manager.set(cache_key, json.dumps(predictions), model_used="forecast")
     offset = pd.tseries.frequencies.to_offset(freq)
     future_dates = pd.date_range(
         series.index[-1] + offset, periods=state.horizon, freq=freq

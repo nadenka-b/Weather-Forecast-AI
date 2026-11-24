@@ -143,7 +143,9 @@ class TestStatusResultReasoning:
         result = client.get(f"{BASE}/{task_id}/result", headers=headers)
         assert result.status_code == 200
         body = result.json()
-        assert body["model_type"] == "arima"
+        # ModelSelector (stub) выбирает ARIMA(1,1,1); Editor по правилам может
+        # усилить её до SARIMA, если валидация улучшилась
+        assert body["model_type"] in ("arima", "sarima")
         assert body["metrics"]["mae"] > 0
         assert len(body["predictions"]) == 14
         assert len(body["prediction_dates"]) == 14

@@ -231,7 +231,7 @@ class TestBuildSupervisor:
 
         supervisor = await build_supervisor()
         assert set(supervisor.agents) == {
-            "data_analyst", "model_selector", "validator", "critic",
+            "data_analyst", "model_selector", "validator", "critic", "editor",
         }
         assert supervisor.agents["model_selector"].retriever is not None
 

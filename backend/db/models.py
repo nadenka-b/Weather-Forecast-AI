@@ -265,6 +265,28 @@ class EvaluationRun(Base):
 
 
 # ============================================================================
+# HitlFeedback — решения эксперта по задачам HITL (Этап 14)
+# ============================================================================
+class HitlFeedback(Base):
+    """Кто, когда и какое решение принял по задаче (confirm / reject / correction)."""
+
+    __tablename__ = "hitl_feedback"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    task_id = Column(
+        String, ForeignKey("forecast_tasks.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id = Column(
+        String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    decision = Column(String, nullable=False)  # confirm | reject | correction
+    correction = Column(JSON, nullable=True)   # выбранная модель/параметры
+    comment = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# ============================================================================
 # ReasoningLogs — иерархический лог рассуждений агентов
 # ============================================================================
 class ReasoningLog(Base):

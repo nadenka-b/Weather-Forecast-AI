@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     # RAG (Этап 10)
     qdrant_url: str = "http://127.0.0.1:6333"
     qdrant_collection: str = "weather_cases"
+    # vector_backend: memory (индекс в процессе, локальный режим) | qdrant (прод)
+    vector_backend: str = "memory"
     embedding_dim: int = 128
     rrf_k: int = 60
 

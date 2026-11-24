@@ -322,15 +322,16 @@ class Supervisor:
 async def build_supervisor(
     max_iterations: int | None = None, use_db_logs: bool = True
 ) -> Supervisor:
-    """Продакшен-сборка (Этапы 10–12): все реальные агенты + RAG-поиск кейсов
-    + reasoning-лог в таблице reasoning_logs (требование задания MLF).
+    """Продакшен-сборка (Этапы 10–14): все агенты (DataAnalyst, ModelSelector,
+    Validator, Critic, Editor) + RAG-поиск кейсов + reasoning-лог в таблице
+    reasoning_logs (требование задания MLF).
 
     use_db_logs=False — лог только в памяти (прогоны оценки run_eval, чтобы
     не засорять reasoning_logs сотнями служебных записей).
-    Editor подключается на Этапе 14 (HITL-цикл коррекции).
     """
     from backend.agents.critic import Critic
     from backend.agents.data_analyst import DataAnalyst
+    from backend.agents.editor import Editor
     from backend.agents.model_selector import ModelSelector
     from backend.agents.validator import Validator
 
@@ -339,6 +340,7 @@ async def build_supervisor(
         "model_selector": ModelSelector(),
         "validator": Validator(),
         "critic": Critic(),
+        "editor": Editor(),  # цикл коррекции: Editor -> Validator -> Critic (Этап 14)
     }
     try:
         from backend.retrieval.hybrid_retriever import build_hybrid_retriever

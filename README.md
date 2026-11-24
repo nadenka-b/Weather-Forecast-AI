@@ -2,7 +2,7 @@
 
 Интеллектуальная система прогнозирования погодных временных рядов с **мультиагентной архитектурой**, **Agentic RAG** и строгой оценкой качества. Курсовой проект по дисциплине MLF-2026.
 
-> **Статус:** Этапы 1–13 выполнены: каркас, БД, Docker, JWT-аутентификация, мультиагентная система (DataAnalyst / ModelSelector c Tool Calling / Validator / Critic + Supervisor), база знаний 1000 кейсов из Jena Climate и Daily Climate, справочник 578 терминов, гибридный RAG (BM25 + векторы + RRF), LLM через LM Studio с трассировкой вызовов, REST API прогноза с фоновыми задачами и HITL, оценка качества (`run_eval.py`: режимы, горизонты, доли данных, агентные метрики, стат. значимость). 270+ тестов зелёные.
+> **Статус:** Этапы 1–14 выполнены: каркас, БД, Docker, JWT-аутентификация, мультиагентная система (DataAnalyst / ModelSelector c Tool Calling / Validator / Critic / Editor + Supervisor), база знаний 1000 кейсов из Jena Climate и Daily Climate, справочник 578 терминов, гибридный RAG (BM25 + векторы + RRF), LLM через LM Studio с трассировкой вызовов, REST API прогноза с фоновыми задачами, оценка качества (`run_eval.py`), HITL-очередь с active learning, кэш. 320+ тестов, покрытие 92%.
 
 ---
 
@@ -157,6 +157,25 @@ poetry run python scripts/run_eval.py --num-series 20 --horizons 14 \
 bootstrap-CI, paired t-test. Результаты: `data/eval/` (`results.jsonl`, `summary.csv`, `comparisons.json`,
 `eval.log`) и в БД (`evaluation_results`, `model_comparisons`). API: `GET /api/v1/evaluate/compare`,
 `POST /api/v1/evaluate/batch`, `GET /api/v1/evaluate/runs/{run_id}`, `GET /api/v1/evaluate/results`.
+
+**Human-in-the-Loop** (Этап 14) — задачи, где цикл агентов не сошёлся (Critic ниже порога / валидация не прошла),
+попадают в статус `waiting_for_human` и в очередь эксперта (роли editor/admin):
+
+```bash
+curl -s localhost:8000/hitl/queue  -H "Authorization: Bearer $EDITOR_TOKEN"   # очередь + причины (critic, validator)
+curl -s localhost:8000/hitl/stats  -H "Authorization: Bearer $EDITOR_TOKEN"   # {pending, confirmed, rejected}
+curl -s -X POST localhost:8000/hitl/$TASK/confirm -H "Authorization: Bearer $EDITOR_TOKEN"   -H "Content-Type: application/json" -d '{"comment":"принято"}'                # кейс -> база знаний + переиндексация RAG
+curl -s -X POST localhost:8000/hitl/$TASK/reject  -H "Authorization: Bearer $EDITOR_TOKEN"   -H "Content-Type: application/json" -d '{"reason":"модель не подходит"}'      # база знаний не меняется
+```
+
+Подтверждение с правкой (`{"model_type": "fit_xgboost", "model_params": {...}}`) перевыполняет прогноз, и в базу
+знаний попадает уже исправленный кейс (active learning). Цикл коррекции `Editor → Validator → Critic`:
+Editor меняет гиперпараметры по замечаниям (совет LLM или правила: SARIMA при сезонности, рост порядка AR
+при автокорреляции остатков, больше лагов для XGBoost) и переобучает модель; Supervisor откатывает правку при регрессии.
+
+**Кэш** — результаты LLM и прогнозов кэшируются в таблице `cache` (счётчик попаданий; `CACHE_ENABLED=false` отключает).
+`GET /cache/stats` (editor/admin), `DELETE /cache/clear` (admin); beat чистит записи старше 30 дней раз в сутки
+(`clear_cache_task`, можно добавить `max_hits`, чтобы сохранять популярные).
 
 Docker-стек Этапа 3 — PostgreSQL + приложение (оба сервиса проходят healthcheck):
 

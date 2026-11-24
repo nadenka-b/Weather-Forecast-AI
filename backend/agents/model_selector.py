@@ -100,6 +100,35 @@ def _query_text(state: ForecastState) -> str:
     )
 
 
+def prepare_tool_context(state: ForecastState) -> dict[str, Any]:
+    """Контекст запуска инструментов реестра для ряда (общий для ModelSelector и Editor)."""
+    values, dates = load_series(state.metadata)
+    prepared = prepare_timeseries(values, dates=dates, target_freq=state.freq or "D")
+    return {
+        "series": prepared["series"],
+        "metadata": state.metadata,
+        "horizon": state.horizon,
+        "season": (state.diagnostics or {}).get("seasonal_period"),
+    }
+
+
+def attach_val_dates(result: dict[str, Any], context: dict[str, Any]) -> None:
+    """Даты валидационного отрезка — для климатических проверок Validator."""
+    if result.get("val_pred"):
+        n_val = len(result["val_pred"])
+        result["val_dates"] = [str(ts.date()) for ts in context["series"].index[-n_val:]]
+
+
+def apply_tool_result(state: ForecastState, result: dict[str, Any]) -> None:
+    """Записывает результат инструмента (модель, параметры, валидационный прогноз) в state."""
+    state.model_type = result.get("model")
+    state.model_params = {key: result[key] for key in _PARAM_KEYS if key in result}
+    state.metadata["val_metrics"] = result.get("metrics")
+    state.metadata["val_pred"] = result.get("val_pred")
+    state.metadata["val_true"] = result.get("val_true")
+    state.metadata["val_dates"] = result.get("val_dates")
+
+
 class ModelSelector(LLMAgent):
     """Выбирает модель и гиперпараметры через реестр инструментов.
 
@@ -153,24 +182,9 @@ class ModelSelector(LLMAgent):
                 eda, self.registry, fewshot=await self._few_shot(state)
             )
 
-        values, dates = load_series(state.metadata)
-        prepared = prepare_timeseries(
-            values, dates=dates, target_freq=state.freq or "D"
-        )
-        context: dict[str, Any] = {
-            "series": prepared["series"],
-            "metadata": state.metadata,
-            "horizon": state.horizon,
-            "season": (state.diagnostics or {}).get("seasonal_period"),
-        }
-
+        context = prepare_tool_context(state)
         result = self.registry.run(decision.tool, decision.arguments, context)
-        if result.get("val_pred"):
-            # даты валидационного отрезка — для климатических проверок Validator
-            n_val = len(result["val_pred"])
-            result["val_dates"] = [
-                str(ts.date()) for ts in prepared["series"].index[-n_val:]
-            ]
+        attach_val_dates(result, context)
         return self._apply_decision(state, decision, result)
 
     # ------------------------------------------------------------------
@@ -198,15 +212,7 @@ class ModelSelector(LLMAgent):
         decision: Any,
         result: dict[str, Any],
     ) -> ForecastState:
-        state.model_type = result.get("model", decision.tool)
-        state.model_params = {
-            key: result[key] for key in _PARAM_KEYS if key in result
-        }
-        state.metadata["val_metrics"] = result.get("metrics")
-        # валидационный прогноз/факт/даты — вход для Validator (Этап 8)
-        state.metadata["val_pred"] = result.get("val_pred")
-        state.metadata["val_true"] = result.get("val_true")
-        state.metadata["val_dates"] = result.get("val_dates")
+        apply_tool_result(state, result)
         state.metadata["selected_tool"] = decision.tool
         state.metadata["tool_attempts"] = decision.attempts
         state.metadata["used_fallback"] = decision.used_fallback

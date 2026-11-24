@@ -10,8 +10,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.routes.auth import router as auth_router
+from backend.api.routes.cache import router as cache_router
 from backend.api.routes.evaluate import router as evaluate_router
 from backend.api.routes.forecast import router as forecast_router
+from backend.api.routes.hitl import router as hitl_router
 from backend.api.routes.health import router as health_router
 from backend.core.config import get_settings
 from backend.db.session import async_engine, ensure_tables_once
@@ -61,4 +63,6 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(forecast_router)
 app.include_router(evaluate_router)
+app.include_router(hitl_router)
+app.include_router(cache_router)
 app.include_router(health_router)

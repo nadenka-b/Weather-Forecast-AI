@@ -11,6 +11,8 @@ from typing import Any
 
 from sqlalchemy import func, select
 
+from backend.core.config import get_settings
+from backend.data.embeddings import case_to_vector_features
 from backend.db.models import GlossaryTerm, KnowledgeCase
 
 logger = logging.getLogger(__name__)
@@ -107,3 +109,35 @@ async def sample_cases(limit: int = 5) -> list[dict[str, Any]]:
             }
             for row in rows.scalars()
         ]
+
+
+async def reindex_rag() -> dict[str, Any]:
+    """Переиндексация RAG (Этап 14): подтвердить, что база знаний строится в индекс.
+
+    В memory-режиме (по умолчанию) индекс собирается из БД при каждом запросе —
+    здесь проверяем, что корпус целиком векторизуется без ошибок. В режиме
+    qdrant точки заливаются в коллекцию (VECTOR_BACKEND=qdrant).
+    """
+    from backend.retrieval.hybrid_retriever import HybridRetriever, load_cases_from_db
+
+    cases = await load_cases_from_db()
+    if not cases:
+        logger.info("RAG reindex: база знаний пуста — нечего индексировать")
+        return {"cases": 0, "target": "memory", "note": "empty"}
+    retriever = HybridRetriever(cases)
+    target = "memory"
+
+    if get_settings().vector_backend.lower() == "qdrant":
+        from backend.retrieval.vector_index import QdrantVectorIndex
+
+        index = QdrantVectorIndex(
+            collection=get_settings().qdrant_collection, url=get_settings().qdrant_url
+        )
+        vectors = retriever.vectorizer.transform(
+            [case_to_vector_features(case.get("features")) for case in cases]
+        )
+        index.add(cases, vectors)
+        target = "qdrant"
+
+    logger.info("RAG reindex: %d кейсов, target=%s", len(cases), target)
+    return {"cases": len(cases), "target": target}
