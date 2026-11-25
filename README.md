@@ -180,7 +180,9 @@ poetry run python scripts/run_eval.py --num-series 50 --horizons 7,14 --data-fra
 poetry run python scripts/report_tables.py          # таблицы и графики в reports/
 ```
 
-Сводные таблицы (`reports/tables/*.md`) и графики (`reports/plots/*.png`) генерируются скриптом `report_tables.py`; результаты прогона и их анализ приведены в отчёте по проекту.
+Сводные таблицы (`reports/tables/*.md`) и графики (`reports/plots/*.png`) генерируются скриптом
+`report_tables.py`; результаты прогона и их анализ — в [отчёте](REPORT.md) (режимы × горизонты,
+стат. значимость, кривая объёма данных, стоимость агентного подхода).
 
 ## 🔌 API
 
