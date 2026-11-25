@@ -4,7 +4,8 @@
     --num-series     20 / 50 / 100 — число тестовых окон (случайная выборка с seed);
     --horizons       горизонты прогноза, напр. 7,14 (в задании: 10,20,50);
     --data-fractions доли обучающих данных: 0.1,0.2,0.5,1.0 (по умолчанию 1.0);
-    --mode           baseline | rag | agents | foundation | all (по умолчанию all);
+    --mode           один или несколько режимов через запятую: baseline, rag,
+                     agents, foundation; all (по умолчанию) — все режимы;
     --fast           сокращённая сетка baseline (naive + ARIMA(1,1,1));
     --no-save-db     не записывать сводку в БД (evaluation_results, model_comparisons).
 
@@ -76,7 +77,8 @@ def main() -> int:
     parser.add_argument("--num-series", type=int, default=20, help="число тестовых окон")
     parser.add_argument("--horizons", default="14", help="горизонты через запятую")
     parser.add_argument("--data-fractions", default="1.0", help="доли данных через запятую")
-    parser.add_argument("--mode", default="all", choices=[*MODES, "all"])
+    parser.add_argument("--mode", default="all",
+                        help="режим(ы) через запятую: baseline, rag, agents, foundation или all")
     parser.add_argument("--fast", action="store_true", help="сокращённая сетка baseline")
     parser.add_argument("--test-set", type=Path, default=DEFAULT_TEST_SET)
     parser.add_argument("--out-dir", type=Path, default=OUT_DIR)
@@ -87,7 +89,11 @@ def main() -> int:
     args.out_dir.mkdir(parents=True, exist_ok=True)
     setup_logging(args.out_dir / "eval.log")
 
-    modes = list(MODES) if args.mode == "all" else [args.mode]
+    requested_modes = parse_list(args.mode, str.strip) or ["all"]
+    unknown = [mode for mode in requested_modes if mode != "all" and mode not in MODES]
+    if unknown:
+        parser.error(f"Неизвестные режимы {unknown}; доступны {list(MODES)} и all")
+    modes = list(MODES) if "all" in requested_modes else requested_modes
     horizons = parse_list(args.horizons, int)
     fractions = parse_list(args.data_fractions, float)
     if not horizons or not fractions:

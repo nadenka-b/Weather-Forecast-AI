@@ -2,7 +2,6 @@
 под ForecastState: converged, rollback_regression, no_change, max_iterations
 (+ HITL по заданию MLF), пропущенные агенты, ошибки агентов.
 """
-import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -299,3 +298,46 @@ class TestDbLogStore:
         assert by_agent["critic"].status == "success"
         assert by_agent["supervisor"].started_at is not None
         assert by_agent["supervisor"].finished_at is not None
+
+
+# ============================================================================
+# Критерий улучшения: при равной оценке Critic решает метрика валидации
+# ============================================================================
+class TestImprovementByMetric:
+    @staticmethod
+    def _state(score=5.0, passed=True, mase=None, mae=None) -> ForecastState:
+        state = ForecastState(series_id="s", horizon=7)
+        state.critic_score = score
+        state.validation_passed = passed
+        state.metadata["val_metrics"] = {"mase": mase, "mae": mae}
+        return state
+
+    def test_lower_mase_is_improvement(self):
+        prev = self._state(mase=1.10, mae=2.0)
+        curr = self._state(mase=1.05, mae=2.0)  # хуже по MAE, лучше по MASE
+        assert Supervisor._is_improvement(prev, curr) is True
+
+    def test_higher_mase_is_regression(self):
+        prev = self._state(mase=1.00, mae=1.0)
+        curr = self._state(mase=1.20, mae=1.0)
+        assert Supervisor._is_improvement(prev, curr) is False
+
+    def test_mae_breaks_tie_when_mase_equal(self):
+        prev = self._state(mase=0.95, mae=1.50)
+        assert Supervisor._is_improvement(prev, self._state(mase=0.95, mae=1.40)) is True
+        assert Supervisor._is_improvement(prev, self._state(mase=0.95, mae=1.60)) is False
+        assert Supervisor._is_improvement(prev, self._state(mase=0.95, mae=1.50)) is False
+
+    def test_no_metrics_means_no_improvement(self):
+        prev = self._state(mase=None, mae=None)
+        assert Supervisor._is_improvement(prev, self._state(mase=None, mae=None)) is False
+
+    def test_broken_validation_is_regression_despite_metric(self):
+        prev = self._state(passed=True, mase=1.2, mae=2.0)
+        curr = self._state(passed=False, mase=0.5, mae=1.0)  # метрика лучше, валидация сломалась
+        assert Supervisor._is_improvement(prev, curr) is False
+
+    def test_critic_score_still_dominates(self):
+        prev = self._state(score=5.0, mase=1.0, mae=1.0)
+        assert Supervisor._is_improvement(prev, self._state(score=6.0, mase=2.0, mae=9.0)) is True
+        assert Supervisor._is_improvement(prev, self._state(score=4.0, mase=0.1, mae=0.1)) is False

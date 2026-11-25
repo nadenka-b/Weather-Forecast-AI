@@ -15,6 +15,7 @@ Supervisor получает mock-агенты или частичный набо
 пропускаются с записью в лог. Это позволяет добавлять агентов поэтапно.
 """
 import logging
+import math
 from typing import Any, Mapping
 
 from backend.agents.base import BaseAgent
@@ -92,7 +93,13 @@ class Supervisor:
 
     @staticmethod
     def _is_improvement(prev: ForecastState, curr: ForecastState) -> bool:
-        """Стало ли лучше: рост critic_score, затем validation_passed."""
+        """Стало ли лучше после итерации Editor (иначе — откат к снапшоту).
+
+        По убыванию приоритета: рост critic_score -> прохождение валидации ->
+        метрика валидации (MASE, затем MAE) на том же контрольном отрезке.
+        Последний критерий делает цикл осмысленным и без LLM: при равной оценке
+        Critic правка принимается, если ошибка на валидации уменьшилась.
+        """
         prev_score, curr_score = prev.critic_score, curr.critic_score
         if curr_score is None and prev_score is not None:
             return False
@@ -105,6 +112,22 @@ class Supervisor:
                 return False
         if curr.validation_passed and not prev.validation_passed:
             return True
+        if prev.validation_passed and not curr.validation_passed:
+            return False  # валидация сломалась — регрессия при любой метрике
+        return Supervisor._metric_improved(prev, curr)
+
+    @staticmethod
+    def _metric_improved(prev: ForecastState, curr: ForecastState) -> bool:
+        """Уменьшилась ли ошибка валидации (MASE, при равенстве — MAE)."""
+        prev_metrics = prev.metadata.get("val_metrics") or {}
+        curr_metrics = curr.metadata.get("val_metrics") or {}
+        for key in ("mase", "mae"):
+            try:
+                before, after = float(prev_metrics.get(key)), float(curr_metrics.get(key))
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(before) and math.isfinite(after) and after != before:
+                return after < before
         return False
 
     def _compute_final(self, state: ForecastState) -> bool:
