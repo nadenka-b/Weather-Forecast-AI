@@ -29,6 +29,7 @@ class BM25Index:
         corpus = [tokenize(case.get("description") or "") for case in cases]
         # пустые документы ломают BM25 — заменяем на нейтральный токен
         corpus = [tokens if tokens else ["пусто"] for tokens in corpus]
+        self._tokenized = corpus
         self._bm25 = BM25Okapi(corpus)
 
     def search(self, query: str, top_k: int = 5) -> list[tuple[str, float]]:
@@ -37,6 +38,13 @@ class BM25Index:
         if not tokens or not self._case_ids:
             return []
         scores = self._bm25.get_scores(tokens)
+        if max(scores) <= 0:
+            # На маленьком корпусе IDF зануляется (термин есть в половине документов),
+            # и Okapi даёт всем 0. Запасной рейтинг — число совпадений термина.
+            token_set = set(tokens)
+            scores = [
+                float(len(token_set & set(self._tokenized[i]))) for i in range(len(self._case_ids))
+            ]
         order = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
         return [
             (self._case_ids[i], float(scores[i]))

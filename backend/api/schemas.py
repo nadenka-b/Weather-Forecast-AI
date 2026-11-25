@@ -9,7 +9,7 @@
 """
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 TaskStatus = Literal["pending", "running", "waiting_for_human", "completed", "failed"]
 
@@ -150,3 +150,33 @@ class CorrectionRequest(BaseModel):
     correction: dict[str, Any] | None = None
     comment: str | None = None
     add_to_kb: bool = Field(False, description="Добавить кейс задачи в базу знаний")
+
+
+# ============================================================================
+# База знаний и справочник (Этап 15 — страницы UI)
+# ============================================================================
+class KbAddRequest(BaseModel):
+    """Добавление кейса в базу знаний (admin)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    series_id: str = Field(..., min_length=1)
+    best_model: str = Field(..., min_length=1)
+    task_type: Literal["timeseries", "tabular"] = "timeseries"
+    city: str | None = None
+    freq: str | None = None
+    target_column: str | None = None
+    features: dict[str, Any] | None = None
+    hyperparams: dict[str, Any] | None = None
+    metrics: dict[str, Any] | None = None
+    description: str | None = None
+
+
+class TermRequest(BaseModel):
+    """Термин справочника (admin)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    term: str = Field(..., min_length=1)
+    definition: str = Field(..., min_length=1)
+    category: str | None = None

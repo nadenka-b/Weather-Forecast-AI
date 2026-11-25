@@ -45,3 +45,6 @@ Thumbs.db
 htmlcov/
 .ruff_cache/
 .mypy_cache/
+
+# Streamlit: локальные секреты (API_URL)
+.streamlit/secrets.toml

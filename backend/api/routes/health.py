@@ -30,8 +30,11 @@ async def health() -> JSONResponse:
 
     db_ok, db_error = await check_database()
     llm_ok, llm_error, llm_provider = await check_llm()
+    # redis и qdrant — опциональные сервисы: проверяются только если включены
+    redis_ok, redis_error = await check_redis()
+    qdrant_ok, qdrant_error = await check_qdrant()
 
-    healthy = db_ok and llm_ok
+    healthy = db_ok and llm_ok and redis_ok and qdrant_ok
     payload = {
         "status": "healthy" if healthy else "unhealthy",
         "app": settings.app_name,
@@ -39,8 +42,9 @@ async def health() -> JSONResponse:
         "services": {
             "database": {"healthy": db_ok, "error": db_error},
             "llm": {"provider": llm_provider, "healthy": llm_ok, "error": llm_error},
+            "redis": {"healthy": redis_ok, "error": redis_error},
+            "qdrant": {"healthy": qdrant_ok, "error": qdrant_error},
             "tasks": {"backend": settings.task_backend, "healthy": True},
-            # redis / qdrant появятся с Celery-воркером и прод-RAG (Этапы 13–15)
         },
     }
     return JSONResponse(status_code=200 if healthy else 503, content=payload)
@@ -73,3 +77,36 @@ async def check_llm() -> tuple[bool, str | None, str]:
     except Exception as exc:  # noqa: BLE001 — отсутствие пакета/сети = нездоров
         logger.error("LLM health check failed: %s", exc)
         return False, str(exc), provider_name
+
+
+async def check_redis() -> tuple[bool, str | None]:
+    """Redis: проверяется только при TASK_BACKEND=celery, иначе считаетсяhealthy."""
+    if get_settings().task_backend.lower() != "celery":
+        return True, None
+    try:
+        from redis import asyncio as aioredis
+
+        client = aioredis.from_url(get_settings().redis_url, socket_connect_timeout=2)
+        try:
+            await client.ping()
+        finally:
+            await client.aclose()
+        return True, None
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Redis health check failed: %s", exc)
+        return False, str(exc)[:200]
+
+
+async def check_qdrant() -> tuple[bool, str | None]:
+    """Qdrant: проверяется только при VECTOR_BACKEND=qdrant."""
+    if get_settings().vector_backend.lower() != "qdrant":
+        return True, None
+    try:
+        from qdrant_client import QdrantClient
+
+        client = QdrantClient(url=get_settings().qdrant_url, timeout=2)
+        client.get_collections()
+        return True, None
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Qdrant health check failed: %s", exc)
+        return False, str(exc)[:200]

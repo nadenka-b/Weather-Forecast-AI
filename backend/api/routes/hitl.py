@@ -109,3 +109,49 @@ async def list_feedback(
 ) -> dict[str, Any]:
     return {"feedback": await FeedbackHandler.list_feedback(task_id=task_id, limit=limit)}
 
+
+
+# ============================================================================
+# Алиасы по путям методички (Step_10/Step_12): те же обработчики
+# ============================================================================
+@router.get("/uncertain")
+async def get_uncertain_alias(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    city: str | None = Query(None),
+    variable: str | None = Query(None),
+    current_user: User = Depends(require_editor),
+) -> dict[str, Any]:
+    return await get_queue(limit=limit, offset=offset, city=city, variable=variable,
+                           current_user=current_user)
+
+
+@router.get("/uncertain/stats")
+async def get_uncertain_stats_alias(current_user: User = Depends(require_editor)) -> dict[str, int]:
+    return await ActiveLearningManager.get_stats()
+
+
+@router.post("/uncertain/{task_id}/confirm")
+async def confirm_uncertain_alias(
+    task_id: str,
+    request: ConfirmRequest,
+    current_user: User = Depends(require_editor),
+) -> dict[str, Any]:
+    return await confirm(task_id, request, current_user)
+
+
+@router.post("/uncertain/{task_id}/reject")
+async def reject_uncertain_alias(
+    task_id: str,
+    request: RejectRequest,
+    current_user: User = Depends(require_editor),
+) -> dict[str, Any]:
+    return await reject(task_id, request, current_user)
+
+
+@router.post("/save-correction")
+async def save_correction_alias(
+    request: CorrectionRequest,
+    current_user: User = Depends(require_editor),
+) -> dict[str, Any]:
+    return await save_feedback(request, current_user)

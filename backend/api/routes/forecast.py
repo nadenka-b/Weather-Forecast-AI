@@ -97,8 +97,18 @@ async def _create_and_run(
 
 
 def _parse_series_csv(content: bytes) -> tuple[list[float], list[Any]]:
-    """CSV ряда: колонки (date, value) или только value."""
-    frame = pd.read_csv(io.BytesIO(content))
+    """CSV ряда: колонки (date, value) или только value.
+
+    Заголовок определяется по первой строке: у CSV без заголовка первая точка
+    ряда не должна превращаться в имена колонок.
+    """
+    first_line = content.split(b"\n", 1)[0].decode("utf-8-sig", errors="replace")
+    try:
+        [float(cell) for cell in first_line.replace(";", ",").split(",") if cell.strip()]
+        header = None  # все ячейки первой строки — числа: заголовка нет
+    except ValueError:
+        header = 0
+    frame = pd.read_csv(io.BytesIO(content), header=header)
     if frame.shape[1] >= 2:
         dates = frame.iloc[:, 0].tolist()
         values = frame.iloc[:, 1].astype(float).tolist()
@@ -114,6 +124,36 @@ def _parse_series_csv(content: bytes) -> tuple[list[float], list[Any]]:
 # ============================================================================
 # POST — создание задачи
 # ============================================================================
+@router.get("/")
+async def list_my_forecasts(
+    limit: int = 20,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Мои задачи: последние с статусом и выбранной моделью (страница «Мои прогнозы»)."""
+    tasks = await TaskRepository().list_for_user(current_user.id, limit=limit)
+    items = []
+    for task in tasks:
+        result = task.get("result") or {}
+        state = task.get("state") or {}
+        items.append(
+            {
+                "task_id": task["id"],
+                "status": task["status"],
+                "series_id": task["series_id"],
+                "horizon": task["horizon"],
+                "model_type": result.get("model_type") or state.get("model_type"),
+                "city": (state.get("metadata") or {}).get("city"),
+                "variable": (state.get("metadata") or {}).get("variable"),
+                "hitl_requested": task["hitl_requested"],
+                "iterations": task["iterations"],
+                "error": task["error"],
+                "created_at": task["created_at"],
+                "finished_at": task["finished_at"],
+            }
+        )
+    return {"tasks": items}
+
+
 @router.post("/", response_model=ForecastAccepted, status_code=status.HTTP_202_ACCEPTED)
 async def create_forecast_from_file(
     file: UploadFile = File(..., description="CSV ряда (date,value) или таблицы"),
