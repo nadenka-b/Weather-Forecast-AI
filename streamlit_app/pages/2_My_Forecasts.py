@@ -6,7 +6,7 @@ import streamlit as st
 
 from utils import api_client
 from utils.auth_guard import logout_button, require_login
-from utils.helpers import short, status_label
+from utils.helpers import format_number, short, status_label
 
 st.set_page_config(page_title="Мои прогнозы — Weather Forecast AI", page_icon="📁", layout="wide")
 require_login()
@@ -36,6 +36,8 @@ frame = pd.DataFrame([
         "Переменная": task.get("variable") or "—",
         "Горизонт": task.get("horizon"),
         "Модель": task.get("model_type") or "—",
+        "MAE": format_number(task.get("mae")),
+        "MAE наива": format_number(task.get("naive_mae")),
         "HITL": "да" if task.get("hitl_requested") else "",
         "Создана": (task.get("created_at") or "")[:19].replace("T", " "),
     }
@@ -61,8 +63,13 @@ if task.get("error"):
     st.error(task["error"])
 result = api_client.get_forecast_result(selected)
 if result:
+    mae = (result.get("metrics") or {}).get("mae")
+    naive_mae = (result.get("naive_metrics") or {}).get("mae")
+    comparison = (f" · **MAE:** {format_number(mae)} против наива {format_number(naive_mae)}"
+                  if mae is not None else "")
     st.markdown(f"**Модель:** `{result.get('model_type')}` · **Critic:** {result.get('critic_score')} "
-                f"· **Валидация:** {'пройдена' if result.get('validation_passed') else 'есть замечания'}")
+                f"· **Валидация:** {'пройдена' if result.get('validation_passed') else 'есть замечания'}"
+                + comparison)
     predictions = result.get("predictions") or []
     if predictions:
         st.markdown("**Прогноз:** " + ", ".join(f"{v:.2f}" for v in predictions[:14])

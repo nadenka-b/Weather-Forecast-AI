@@ -22,10 +22,11 @@ from backend.agents.supervisor import build_supervisor
 from backend.agents.validator import Validator
 from backend.core.config import get_settings
 from backend.core.llm.tools import build_default_registry
+from backend.core.metrics import naive_forecast, regression_metrics
 from backend.core.models import ForecastState
 from backend.data.tasks import TaskRepository
 from backend.db.session import ensure_tables_once
-from backend.timeseries.classical import predict_final
+from backend.timeseries.classical import predict_final, time_split
 from backend.timeseries.preprocessing import load_series, prepare_timeseries
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,15 @@ async def finalize_forecast(state: ForecastState) -> None:
     state.metadata["predictions"] = predictions
     state.metadata["prediction_dates"] = [str(d.date()) for d in future_dates]
 
+    # Наивный сезонный прогноз на том же контрольном отрезке, что и метрики
+    # модели (val_metrics из fit_*): сравнение «модель vs наивный» (задание
+    # MLF: результат с метриками и сравнением с наивным прогнозом) — для UI/отчёта
+    train, val = time_split(series, state.horizon)
+    naive_pred = naive_forecast(train.values, len(val), season or 1)
+    state.metadata["naive_metrics"] = regression_metrics(
+        val.values, naive_pred, train.values, season=season or 1
+    )
+
 
 def build_result(state: ForecastState) -> dict[str, Any]:
     """Словарь результата для GET /result."""
@@ -119,6 +129,7 @@ def build_result(state: ForecastState) -> dict[str, Any]:
         "model_type": state.model_type,
         "model_params": state.model_params,
         "metrics": state.metadata.get("val_metrics"),
+        "naive_metrics": state.metadata.get("naive_metrics"),
         "critic_score": state.critic_score,
         "critic_reasoning": state.critic_reasoning,
         "validation_passed": state.validation_passed,
@@ -170,7 +181,7 @@ _RESET_METADATA_KEYS = (
     "critic_suggestions", "critic_adequacy", "critic_used_fallback",
     "validator_errors", "validator_warnings", "agent_errors",
     "supervisor", "reasoning_trace", "predictions", "prediction_dates",
-    "val_pred", "val_true", "val_dates", "val_metrics",
+    "val_pred", "val_true", "val_dates", "val_metrics", "naive_metrics",
     "selected_tool", "tool_attempts", "used_fallback",
 )
 

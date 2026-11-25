@@ -189,6 +189,10 @@ class TestPipeline:
         assert Path(state.predictions_path).exists()
         report = state.diagnostics["validation"]
         assert report["checks"]["predictions"]["length"] == 14
+        # наивный бейзлайн на том же контрольном отрезке (сравнение в UI/отчёте)
+        assert state.metadata["naive_metrics"]["mae"] > 0
+        assert set(state.metadata["naive_metrics"]) >= {"mae", "rmse", "mase"}
+        assert pipeline.build_result(state)["naive_metrics"] == state.metadata["naive_metrics"]
 
     async def test_run_forecast_statuses(self, memory_db, monkeypatch):
         repo = TaskRepository()

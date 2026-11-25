@@ -104,6 +104,7 @@ def test_full_user_journey(client):
     assert result["model_type"] in ("arima", "sarima")
     assert len(result["predictions"]) == 14
     assert result["metrics"]["mae"] > 0
+    assert result["naive_metrics"]["mae"] > 0  # сравнение с наивным прогнозом (задание MLF)
 
     # 4. Дерево рассуждений: Supervisor + агенты
     reasoning = http.get(f"/api/v1/forecast/{task_id}/reasoning", headers=headers).json()
@@ -134,9 +135,11 @@ def test_full_user_journey(client):
     found = http.get("/kb/search", params={"q": "Подтверждён экспертом"}, headers=headers).json()
     assert any(item["series_id"].startswith("hitl|") for item in found["results"])
 
-    # 8. «Мои прогнозы»: завершённая и ожидающая задачи
+    # 8. «Мои прогнозы»: завершённая и ожидающая задачи; метрики видны в списке
     tasks = http.get("/api/v1/forecast/", headers=headers).json()["tasks"]
     assert {task["status"] for task in tasks} == {"completed", "waiting_for_human"}
+    assert any(task.get("mae") is not None and task.get("naive_mae") is not None
+               for task in tasks)
 
     # 9. Оценка качества: сравнение моделей и пакетный запуск
     compare = http.get("/api/v1/evaluate/compare",

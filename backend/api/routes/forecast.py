@@ -142,6 +142,8 @@ async def list_my_forecasts(
                 "series_id": task["series_id"],
                 "horizon": task["horizon"],
                 "model_type": result.get("model_type") or state.get("model_type"),
+                "mae": (result.get("metrics") or {}).get("mae"),
+                "naive_mae": (result.get("naive_metrics") or {}).get("mae"),
                 "city": (state.get("metadata") or {}).get("city"),
                 "variable": (state.get("metadata") or {}).get("variable"),
                 "hitl_requested": task["hitl_requested"],

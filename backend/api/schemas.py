@@ -59,6 +59,7 @@ class ForecastResult(BaseModel):
     model_type: str | None = None
     model_params: dict[str, Any] | None = None
     metrics: dict[str, Any] | None = None
+    naive_metrics: dict[str, Any] | None = None
     critic_score: float | None = None
     critic_reasoning: str | None = None
     validation_passed: bool = False

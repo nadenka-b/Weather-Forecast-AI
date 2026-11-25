@@ -71,10 +71,11 @@ def values(n=40, seed=0):
 TASK = {"task_id": "task-0001-abcd", "status": "completed", "hitl_requested": False,
         "iterations": 1, "created_at": "2026-11-25T10:00:00", "finished_at": None,
         "series_id": "jena_temp", "horizon": 7, "model_type": "sarima", "city": "Jena",
-        "variable": "temperature", "error": None}
+        "variable": "temperature", "error": None, "mae": 1.2, "naive_mae": 1.4}
 RESULT = {"task_id": "task-0001-abcd", "status": "completed", "model_type": "sarima",
           "model_params": {"order": [1, 1, 1]}, "metrics": {"mae": 1.2, "rmse": 1.5, "mape": 10.0,
                                                            "wape": 8.0, "mase": 0.9},
+          "naive_metrics": {"mae": 1.4, "rmse": 1.8, "mape": 12.0, "wape": 9.5, "mase": 1.05},
           "critic_score": 8.0, "critic_reasoning": "хорошо", "validation_passed": True,
           "validation": {"errors": [], "warnings": []}, "predictions": [1.0] * 7,
           "prediction_dates": [f"2026-12-0{i + 1}" for i in range(7)],
@@ -189,6 +190,11 @@ class TestForecastPage:
         metric_values = {m.label: m.value for m in at.metric}
         assert metric_values["Модель"] == "sarima"
         assert metric_values["MAE"] == "1.20"
+        assert any("наивным" in m.value for m in at.markdown)  # сравнение с наивным прогнозом
+        comparison = next(f for f in (d.value for d in at.dataframe)
+                          if "Наивный прогноз" in f.columns)
+        assert len(comparison) == 5  # все 5 метрик
+        assert comparison.iloc[0]["Итог"] == "лучше наива ✅"
         assert any("🧠" in exp.label for exp in at.expander)   # дерево рассуждений
         assert any("supervisor" in exp.label for exp in at.expander)
         assert not [e.value for e in at.error]
@@ -222,6 +228,8 @@ class TestMyForecastsPage:
         at = run_page("pages/2_My_Forecasts.py", USER)
         assert len(at.dataframe[0].value) == 1
         assert at.dataframe[0].value.iloc[0]["Модель"] == "sarima"
+        assert at.dataframe[0].value.iloc[0]["MAE"] == "1.20"      # метрики в списке
+        assert at.dataframe[0].value.iloc[0]["MAE наива"] == "1.40"
 
 
 class TestReasoningPage:

@@ -12,6 +12,7 @@ from utils.helpers import (
     parse_series,
     render_llm_calls,
     render_metrics,
+    render_naive_comparison,
     render_tree,
     status_label,
 )
@@ -76,7 +77,10 @@ def show_result(task_id: str) -> None:
             use_container_width=True,
         )
     render_metrics(result.get("metrics") or {})
-    st.caption(f"Метрики валидации (последние точки ряда) · модель: {result.get('model_params')}")
+    if result.get("naive_metrics"):
+        render_naive_comparison(result.get("metrics") or {}, result["naive_metrics"])
+    st.caption("Метрики считаются на контрольном отрезке ряда (последние `horizon` точек "
+               "до прогноза) · модель: " + f"{result.get('model_params')}")
 
     with st.expander("🔍 Проверка Validator"):
         st.json(result.get("validation") or {})

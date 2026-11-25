@@ -49,6 +49,26 @@ def render_metrics(metrics: dict, keys=("mae", "rmse", "mape", "wape", "mase"),
         col.metric(labels.get(key, key), format_number(metrics.get(key)))
 
 
+def render_naive_comparison(metrics: dict, naive_metrics: dict) -> None:
+    """Сравнение метрик модели с наивным сезонным прогнозом (тот же контрольный отрезок)."""
+    rows = []
+    for key, label in (("mae", "MAE"), ("rmse", "RMSE"), ("mape", "MAPE, %"),
+                       ("wape", "WAPE, %"), ("mase", "MASE")):
+        model_v = (metrics or {}).get(key)
+        naive_v = (naive_metrics or {}).get(key)
+        if model_v is None or naive_v is None:
+            continue
+        rows.append({
+            "Метрика": label,
+            "Модель": format_number(model_v),
+            "Наивный прогноз": format_number(naive_v),
+            "Итог": "лучше наива ✅" if model_v < naive_v else "не лучше наива ⚠️",
+        })
+    if rows:
+        st.markdown("**Сравнение с наивным сезонным прогнозом** (контрольный отрезок ряда):")
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+
 def render_tree(nodes: list, depth: int = 0) -> None:
     """Пошаговое дерево рассуждений агентов (supervisor -> агенты -> tools)."""
     for node in nodes or []:
