@@ -62,13 +62,18 @@ class EvalConfig:
 # Данные
 # ============================================================================
 def load_test_windows(
-    path: Path | str = DEFAULT_TEST_SET, num_series: int | None = None, seed: int = 42
+    path: Path | str | None = None, num_series: int | None = None, seed: int = 42
 ) -> list[dict[str, Any]]:
     """Тестовые окна из test_set.jsonl (holdout, не пересекаются с базой знаний).
 
     num_series: случайная (детерминированная по seed) выборка окон, чтобы
     охватить разные переменные и города.
     """
+    # путь по умолчанию разрешается в момент вызова: значение аргумента
+    # вычислилось бы при объявлении функции, и monkeypatch DEFAULT_TEST_SET
+    # в тестах не действовал бы (CI падал: файла нет вне локальной машины)
+    if path is None:
+        path = DEFAULT_TEST_SET
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(
