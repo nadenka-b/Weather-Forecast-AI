@@ -13,7 +13,7 @@ task_type="tabular": проверка типов, импутация, one-hot, �
 - "records": list[dict] для tabular (+ target_column).
 """
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from backend.agents.base import BaseAgent
 from backend.core.models import ForecastState
@@ -24,6 +24,9 @@ from backend.timeseries.preprocessing import (
     prepare_tabular,
     prepare_timeseries,
 )
+
+if TYPE_CHECKING:  # только для аннотаций
+    import pandas as pd
 
 logger = logging.getLogger(__name__)
 

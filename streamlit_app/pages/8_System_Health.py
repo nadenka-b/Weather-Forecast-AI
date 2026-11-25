@@ -5,7 +5,6 @@ import streamlit as st
 
 from utils import api_client
 from utils.auth_guard import logout_button, require_role
-from utils.helpers import format_number
 
 st.set_page_config(page_title="Состояние системы — Weather Forecast AI", page_icon="👑", layout="wide")
 require_role("admin")

@@ -1,11 +1,9 @@
 """Тесты Этапа 14: кэш, агент Editor, HITL/Active Learning, обратная связь,
 задачи обслуживания (reindex RAG, очистка кэша)."""
-import json
 from datetime import datetime, timedelta, timezone
 
 import httpx
 import numpy as np
-import pandas as pd
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -23,7 +21,6 @@ from backend.hitl.active_learning import ActiveLearningManager, build_kb_case
 from backend.hitl.feedback import FeedbackHandler
 from backend.services import pipeline
 from backend.worker import tasks as worker_tasks
-from tests.eval_helpers import make_window
 
 
 @pytest.fixture
@@ -141,9 +138,7 @@ class TestLLMCache:
     async def test_identical_calls_hit_cache(self, memory_db):
         calls: list = []
         manager = LLMManager(provider=self._provider(calls))
-        from backend.core.llm.tools import build_default_registry
 
-        registry = build_default_registry()
         first = await manager.complete("оцени ряд", system="судья")
         second = await manager.complete("оцени ряд", system="судья")
         assert first == second
@@ -363,7 +358,7 @@ class TestActiveLearning:
             return state
 
         monkeypatch.setattr(pipeline, "perform_forecast", fake_perform)
-        result = await ActiveLearningManager.confirm_correction(
+        await ActiveLearningManager.confirm_correction(
             task_id, correction={"model_type": "fit_xgboost", "model_params": {"lags": 14}}
         )
         assert seen["forced"] == {"tool": "fit_xgboost", "arguments": {"lags": 14}}

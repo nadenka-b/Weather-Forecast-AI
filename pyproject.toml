@@ -29,7 +29,8 @@ pmdarima = "^2.0"
 prophet = "^1.1"
 xgboost = "^2.1"
 lightgbm = "^4.5"
-tsfresh = "^0.20"
+# tsfresh >= 0.21 совместим с новым SciPy (без cwt) и без pkg_resources
+tsfresh = "^0.21"
 # --- LLM / RAG ---
 transformers = "^4.46"
 sentence-transformers = "^3.2"
@@ -57,6 +58,8 @@ pytest-asyncio = "^0.24"
 pytest-cov = "^5.0"
 respx = "^0.21"
 ruff = "^0.7"
+# графики для отчёта (scripts/report_tables.py)
+matplotlib = "^3.9"
 
 # Бонус (+5%): TS Foundation Models для режима +foundation (Этапы 7/13).
 # Установка: poetry install --with foundation

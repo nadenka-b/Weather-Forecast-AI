@@ -3,9 +3,9 @@
 
 import streamlit as st
 
-from utils import api_client, charts
+from utils import api_client
 from utils.auth_guard import logout_button, require_login
-from utils.helpers import csv_to_series, render_metrics, status_label
+from utils.helpers import csv_to_series, status_label
 
 st.set_page_config(page_title="Главная — Weather Forecast AI", page_icon="🌤", layout="wide")
 require_login()

@@ -30,6 +30,28 @@ class ToolExecutionError(RuntimeError):
     """Ошибка выполнения инструмента (нет пакета, не сошлась модель и т.п.)."""
 
 
+def make_prophet(**kwargs) -> Any:
+    """Создаёт Prophet, переводя проблемы окружения в ToolExecutionError.
+
+    Prophet >= 1.2 требует установленного CmdStan (poetry run install_cmdstan);
+    без него (или при несовместимости cmdstanpy с локалью Windows) конструктор
+    падает. Инструмент при этом остаётся опциональным: Supervisor зафиксирует
+    ошибку агента, а остальные модели продолжают работать.
+    """
+    try:
+        from prophet import Prophet
+
+        return Prophet(**kwargs)
+    except ImportError as exc:
+        raise ToolExecutionError("Пропущен prophet: poetry install prophet") from exc
+    except Exception as exc:  # noqa: BLE001 — любая ошибка бэкенда Stan
+        raise ToolExecutionError(
+            "Prophet недоступна: не установлен CmdStan или cmdstanpy не совместим "
+            f"с окружением ({type(exc).__name__}: {exc}). Установите CmdStan: "
+            "poetry run python -c \"import cmdstanpy; cmdstanpy.install_cmdstan()\""
+        ) from exc
+
+
 def time_split(series: pd.Series, horizon: int) -> tuple[pd.Series, pd.Series]:
     """Временной сплит: последние `horizon` точек — валидация."""
     horizon = max(1, min(horizon, len(series) // 5))
@@ -110,18 +132,13 @@ def fit_prophet(
     seasonality_mode: str = "additive",
     season: int | None = None,
 ) -> dict[str, Any]:
-    """Prophet (ленивый импорт — тяжёлая зависимость)."""
-    try:
-        from prophet import Prophet
-    except ImportError as exc:
-        raise ToolExecutionError("Пропущен prophet: poetry install prophet") from exc
-
+    """Prophet (ленивый импорт — тяжёлая зависимость; нужен CmdStan)."""
     train, val = time_split(series, horizon)
     freq = series.index.freqstr or "D"
     if freq.upper().startswith("24H"):
         freq = "D"
 
-    model = Prophet(
+    model = make_prophet(
         seasonality_mode=seasonality_mode,
         yearly_seasonality="auto",
         weekly_seasonality="auto",
@@ -266,12 +283,10 @@ def _xgboost_recursive_forecast(
 
 
 def _prophet_forecast(series: pd.Series, horizon: int, params: dict[str, Any]) -> list[float]:
-    from prophet import Prophet
-
     freq = series.index.freqstr or "D"
     if freq.upper().startswith("24H"):
         freq = "D"
-    model = Prophet(
+    model = make_prophet(
         seasonality_mode=params.get("seasonality_mode", "additive"),
         yearly_seasonality="auto",
         weekly_seasonality="auto",

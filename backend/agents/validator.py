@@ -209,7 +209,6 @@ class Validator(BaseAgent):
         }
 
         # Ljung-Box: автокорреляция остатков означает непойманную структуру
-        n = len(residuals)
         lb_pvalue = ljung_box_pvalue(residuals)
         if lb_pvalue is not None:
             result["ljung_box_pvalue"] = round(lb_pvalue, 4)

@@ -1,203 +1,252 @@
-# 🌤 Weather Forecast AI
+# 🌤 Weather Forecast AI — мультиагентная платформа прогнозирования погоды
 
-Интеллектуальная система прогнозирования погодных временных рядов с **мультиагентной архитектурой**, **Agentic RAG** и строгой оценкой качества. Курсовой проект по дисциплине MLF-2026.
+**Интеллектуальная система прогнозирования погодных временных рядов с мультиагентной архитектурой, Agentic RAG и Human-in-the-Loop.**
 
-> **Статус:** Этапы 1–14 выполнены: каркас, БД, Docker, JWT-аутентификация, мультиагентная система (DataAnalyst / ModelSelector c Tool Calling / Validator / Critic / Editor + Supervisor), база знаний 1000 кейсов из Jena Climate и Daily Climate, справочник 578 терминов, гибридный RAG (BM25 + векторы + RRF), LLM через LM Studio с трассировкой вызовов, REST API прогноза с фоновыми задачами, оценка качества (`run_eval.py`), HITL-очередь с active learning, кэш. 320+ тестов, покрытие 92%.
+Пользователь загружает метеорологический ряд, указывает город, переменную и горизонт (7–14 дней).
+Система анализирует данные, подбирает модель через Tool Calling (без генерации кода), строит прогноз,
+проверяет его физическую реалистичность и объясняет выбор; сомнительные прогнозы уходят эксперту.
 
----
+## 📋 О проекте
 
-## 📖 О проекте
+Курсовой проект по заданию MLF-2026 («Разработка интеллектуальной системы прогнозирования
+временных рядов с мультиагентной архитектурой, Agentic RAG и оценкой качества»), тема —
+прогноз погоды (температура, осадки).
 
-Пользователь загружает метеорологический временной ряд (или выбирает встроенный датасет), указывает **город**, **целевую переменную** (среднесуточная температура или количество осадков) и **горизонт** (7–14 дней). Система:
+Оркестрация — чистый Python без тяжёлых агентных фреймворков: состояние (`ForecastState`,
+Pydantic) передаётся между агентами только по ссылке (`task_id`), тяжёлые объекты в payload
+не передаются. LLM используется через **Tool Calling**: `ModelSelector` выбирает инструмент
+и гиперпараметры из реестра, но никогда не пишет код.
 
-1. анализирует данные (пропуски, сезонность, стационарность);
-2. подбирает оптимальную модель прогнозирования через **Tool Calling** (от классических статистических до градиентного бустинга; бонус — TS Foundation Models);
-3. обучает/инференсит, диагностирует остатки;
-4. валидирует физическую реалистичность (климатические пределы) и возвращает обоснованный прогноз с метриками.
+## ✨ Возможности
 
----
+- **Мультиагентный пайплайн**: DataAnalyst → ModelSelector → Validator → Critic → (Editor) под
+  управлением Supervisor (адаптивный бюджет итераций, rollback при регрессии, HITL при несходимости).
+- **Agentic RAG**: гибридный поиск похожих кейсов (BM25 + векторы статистических признаков,
+  RRF) по базе знаний из 1000 кейсов; few-shot примеры попадают в промпт ModelSelector.
+- **Реестр инструментов**: ARIMA/SARIMA (автоподбор порядка), Prophet, XGBoost на лагах,
+  XGBoost для табличных задач; fallback — 3 попытки Tool Calling, затем SARIMA-автоподбор.
+- **Валидация**: климатические пределы, NaN и длина прогноза, Ljung-Box и Shapiro-Wilk на остатках.
+- **Critic (LLM-as-a-Judge)** и **Editor**: правка гиперпараметров по замечаниям с переобучением.
+- **Human-in-the-Loop**: очередь на проверку, подтверждение (кейс → база знаний, active learning)
+  и отклонение; решение с правкой модели перевыполняет прогноз.
+- **Оценка качества**: `run_eval.py` (режимы × горизонты × доли данных, агентные метрики,
+  Diebold-Mariano / Wilcoxon / bootstrap-CI / t-test), API сравнения моделей.
+- **Observability**: иерархическое дерево рассуждений (`reasoning_logs`, `parent_id`) и
+  трассировка каждого вызова LLM (`llm_calls`: модель, токены, latency).
+- **Инфраструктура**: REST API (FastAPI, 202 + опрос статуса), фоновые задачи (inline или
+  Celery + Redis + beat), кэш LLM и прогнозов, JWT-аутентификация с ролями, Streamlit UI, Docker Compose + Nginx.
 
-## 🤖 Как работает
+## 🏗️ Архитектура
 
-### Мультиагентный пайплайн
+```text
+                ┌─────────────────────────────────────────────────────────────┐
+                │                     FastAPI (app)                           │
+                │  /auth  /api/v1/forecast  /hitl  /api/v1/evaluate  /admin   │
+                └───────────────┬─────────────────────────────┬───────────────┘
+                                │ task_id (202)               │
+                     ┌──────────▼──────────┐      ┌──────────▼──────────┐
+                     │  TaskRunner         │      │  Streamlit UI       │
+                     │  inline | Celery    │      │  (на хосте, :8501)  │
+                     └──────────┬──────────┘      └─────────────────────┘
+                                │ run_forecast(task_id)
+                ┌───────────────▼───────────────────────────────────────────┐
+                │                Supervisor (до 3 итераций)                 │
+                │                                                               │
+                │  DataAnalyst ─► ModelSelector ─► Validator ─► Critic       │
+                │       (EDA,        │      ▲         (NaN,      (LLM-        │
+                │        STL, ADF)   │      │          климат,    Judge)     │
+                │                   │      │          остатки)      │        │
+                │              Tool Calling  │                        ▼        │
+                │                   │      └────────── Editor (правка +      │
+                │                   ▼                 переобучение)           │
+                │           Реестр инструментов: fit_arima / fit_prophet /    │
+                │           fit_xgboost / fit_tabular_xgboost                │
+                └──────┬──────────────────┬──────────────────┬────────────────┘
+                       │                  │                  │
+             ┌─────────▼──────┐  ┌────────▼───────┐  ┌───────▼─────────────┐
+             │ LLM (LM Studio)│  │ Agentic RAG    │  │ PostgreSQL / SQLite │
+             │ tool_calls     │  │ BM25 + векторы │  │ reasoning_logs,     │
+             │ llm_calls      │  │ + RRF          │  │ llm_calls, БЗ, кэш  │
+             └────────────────┘  └────────────────┘  └─────────────────────┘
+                                                       │
+                                 ┌─────────────────────▼─────────────────────┐
+                                 │ waiting_for_human → HITL-очередь →        │
+                                 │ confirm: кейс → база знаний → reindex RAG │
+                                 └───────────────────────────────────────────┘
+```
 
-`Supervisor` оркестрирует цикл (до `max_iterations = 3`), ведёт иерархический **Reasoning Log** (записи с `parent_id`, доступны через API) и при необходимости приостанавливает задачу для HITL:
+Ключевые файлы:
 
-| Агент | Ответственность |
-|---|---|
-| **DataAnalyst** | парсинг дат, проверка регулярности, ресемплинг, заполнение пропусков метеоданных, STL-декомпозиция, ADF-тест, выделение сезонности |
-| **ModelSelector** | анализирует EDA + похожие кейсы из RAG, вызывает LLM с **Tool Calling** (не генерирует сырой код!) и выбирает модель + гиперпараметры из реестра инструментов |
-| **Validator** | формальная проверка: NaN, длина горизонта, **климатические пределы** (температура не выходит за рамки климатической нормы города/месяца), статистические тесты остатков (Ljung-Box, Shapiro-Wilk) |
-| **Critic** | LLM-as-a-Judge: адекватность выбора модели; особая проверка на **исторических аномалиях** (волны жары, заморозки) |
-| **Editor** *(опц.)* | если Validator/Critic недовольны — корректирует гиперпараметры, добавляет лаги давления, влажности, ветра |
+- `backend/agents/` — `BaseAgent`, `Supervisor`, DataAnalyst, ModelSelector, Validator, Critic, Editor
+- `backend/services/pipeline.py` — центральный `perform_forecast` (агенты → финальный прогноз → валидация)
+- `backend/core/llm/` — `LLMManager` (роутинг провайдеров, Tool Calling), реестр инструментов, провайдеры
+- `backend/retrieval/` — BM25, векторный индекс (in-memory / Qdrant), RRF
+- `backend/hitl/` — `ActiveLearningManager`, `FeedbackHandler`
+- `backend/evaluation/` — ядро оценки, статистические тесты, сервис запусков
+- `backend/worker/` — Celery-приложение, 4 задачи, постоянный event loop
+- `streamlit_app/` — интерфейс (8 страниц)
+- `infrastructure/` — Docker Compose (7 сервисов), Dockerfile, Nginx
+- `scripts/` — загрузка данных, генерация базы знаний и справочника, `run_eval.py`, `report_tables.py`
 
-**Реестр инструментов** (`backend/core/llm/tools.py`): минимум `fit_arima`, `fit_prophet`, `fit_xgboost` + `fit_tabular_xgboost` (демонстрация расширяемости на табличные данные); бонус — `infer_chronos`. Fallback Tool Calling: 3 попытки, затем SARIMA с автоподбором порядка (`auto_arima`).
+## 🚀 Быстрый старт
 
-### Agentic RAG
+### Требования
 
-- **Гибридный поиск**: BM25 (по текстовым описаниям кейсов) + векторный поиск (Qdrant; локально — FAISS), слияние через **Reciprocal Rank Fusion**.
-- **Эмбеддинги рядов**: статистические признаки (тренд, сезонность, энтропия, автокорреляции; `tsfresh`) + снижение размерности PCA до 128 dims. Бонус — contextual retrieval.
-- **База знаний**: 1000+ «успешных кейсов» (ряд → сетка моделей → лучшая модель + гиперпараметры + метрики + описание) и **справочник 500+ метеорологических терминов**.
+- Python 3.12, Poetry 2.x
+- LM Studio с моделью Qwen2.5-7B-Instruct (или внешний API); без LLM доступен режим `stub`
+- Docker Desktop / Docker Compose v2 — для полного стека (вариант B)
 
-### Human-in-the-Loop
+### Вариант A — локальный запуск
 
-Если цикл не сошёлся, Critic выставил критические оценки или обнаружены **экстремальные погодные условия** — задача уходит в очередь модерации. Эксперт может выбрать другую модель, изменить горизонт или принять результат; подтверждённые кейсы пополняют базу знаний (active learning) и запускают переиндексацию RAG.
+```bash
+git clone https://github.com/nadenka-b/Weather-Forecast-AI.git
+cd Weather-Forecast-AI
+poetry install
+cp .env.example .env                        # LM_STUDIO_BASE_URL, JWT_SECRET и др.
 
-### Режимы оценки и метрики
+# данные, база знаний и справочник
+poetry run python scripts/download_data.py                              # Jena Climate, Daily Climate
+poetry run python scripts/generate_knowledge_base.py --target-cases 1000  # окна -> сетка моделей -> кейсы
+poetry run python scripts/generate_glossary.py                          # 578 метеотерминов
+poetry run python scripts/import_data.py                                # в БД (без дублей)
 
-- Режимы: `baseline` / `+rag` / `+agents` / `+foundation` (ablation).
-- Точность: **MAE, RMSE, MAPE, MASE, WAPE**; сравнение с **наивным (сезонным) прогнозом**.
-- Статистика: Diebold-Mariano, Wilcoxon signed-rank, bootstrap-CI (бонус).
-- Агентные метрики: среднее число итераций Supervisor, доля HITL, время, токены LLM.
-- Анализ подвыборок 10/20/50/100% — кривая «точность vs размер обучающей выборки».
+poetry run python run.py                     # API: http://localhost:8000/docs
+```
 
-### Инженерия
+Без запущенного LM Studio: `LLM_PROVIDER=stub poetry run python run.py` — LLM заменена
+заглушками (выбирается ARIMA(1,1,1), Critic ставит 5.0, задачи попадают в HITL-очередь).
 
-- Кэш результатов LLM/прогнозов (Redis / таблица в БД), счётчик попаданий.
-- Фоновые задачи: Celery + Redis (прогноз, batch-оценка, переиндексация RAG, очистка кэша).
-- JWT-аутентификация с ролями (guest / user / editor / admin).
-- Observability: каждый LLM-вызов логируется в `llm_calls` (модель, токены, latency, статус).
+### Вариант B — Docker Compose (полный стек)
 
----
+```bash
+cp infrastructure/.env.example infrastructure/.env   # задайте JWT_SECRET, LM_STUDIO_BASE_URL
+cd infrastructure
+docker compose up -d --build
+```
 
-## 🧰 Стек
+Сервисы: `db` (PostgreSQL 16), `redis`, `qdrant`, `app`, `worker`, `beat`, `nginx`.
+LM Studio остаётся на хосте (Developer → Start Server, порт 1234) и доступна контейнерам
+через `host.docker.internal`. После сборки:
 
-Python 3.12 + Poetry · FastAPI · SQLAlchemy (async) + PostgreSQL/SQLite · Alembic · Celery + Redis · Qdrant/FAISS + rank-bm25 · sentence-transformers / tsfresh / PCA · statsmodels (ARIMA/SARIMA, STL) · Prophet · XGBoost/LightGBM · pmdarima · LM Studio (OpenAI-совместимый сервер, Qwen2.5-7B-Instruct) / HuggingFace / внешние API · pytest (покрытие ≥ 70%) · Chainlit/Gradio · Docker Compose + Nginx · GitHub Actions (бонус).
+- API и Swagger: http://localhost/docs (через Nginx)
+- Здоровье сервисов: http://localhost/health
 
----
+### Первый администратор
 
-## 👥 Команда и распределение работ
+```bash
+poetry run python scripts/create_admin.py --email admin@example.com --username admin --password Admin1234
+```
+
+### Интерфейс
+
+```bash
+pip install -r streamlit_app/requirements.txt
+streamlit run streamlit_app/app.py --server.port 8501
+```
+
+## 📊 Данные
+
+| Источник | Объём | Частота | Переменные |
+|---|---|---|---|
+| **Jena Climate** (UCI, 2009–2016) | 420 451 наблюдений, 14 переменных → 2921 день | 10 мин → D | temperature, pressure, humidity, wind_speed, dew_point |
+| **Daily Climate** (Kaggle, Дели) | 1462 наблюдения, 4 переменные | D | temperature, humidity |
+| **База знаний** | 1000 кейсов (Jena 910, Delhi 90): окна 365 дней с шагом 10 → сетка моделей → лучший по MASE | D | 14 признаков на кейс |
+| **Справочник** | 578 метеорологических, климатологических и статистических терминов | — | — |
+| **Holdout-набор** | 238 окон, не пересекается с базой знаний (зазор по времени) | D | те же ряды |
+
+## 🧪 Тесты
+
+```bash
+poetry run pytest tests -q --cov=backend        # покрытие ≥ 70%
+poetry run ruff check backend tests scripts streamlit_app
+```
+
+Тесты не требуют LLM, Redis и Qdrant: LLM работает в режиме `stub`, провайдеры проверяются
+через `httpx.MockTransport`, Qdrant — через in-memory клиент. CI (GitHub Actions) ставит
+лёгкое подмножество зависимостей из `requirements-ci.txt` и запускает линтер и тесты
+с порогом покрытия 70%.
+
+## 🎯 Режимы оценки
+
+| Режим | LLM (Tool Calling) | RAG | Цикл агентов | Что измеряет |
+|---|---|---|---|---|
+| `baseline` | ✗ | ✗ | ✗ | классика без LLM: сетка моделей, лучшая по валидации |
+| `rag` | ✗ | ✓ | ✗ | выбор модели по ближайшему кейсу базы знаний |
+| `agents` | ✓ | ✓ | ✓ | полный цикл агентов + финальный прогноз |
+| `foundation` | — | — | — | TS Foundation Models (Chronos/TimesFM; пока не установлены — пропуск) |
+
+```bash
+poetry run python scripts/run_eval.py --num-series 50 --horizons 7,14 --data-fractions 1.0
+poetry run python scripts/report_tables.py          # таблицы и графики в reports/
+```
+
+Сводные таблицы (`reports/tables/*.md`) и графики (`reports/plots/*.png`) генерируются скриптом `report_tables.py`; результаты прогона и их анализ приведены в отчёте по проекту.
+
+## 🔌 API
+
+| Метод | Путь | Роль | Назначение |
+|---|---|---|---|
+| POST | `/auth/register`, `/auth/login` | — | регистрация, вход (JWT) |
+| GET | `/auth/me` | user | данные пользователя |
+| POST | `/api/v1/forecast/` (CSV), `/api/v1/forecast/json` | user | запуск прогноза → 202 + `task_id` |
+| GET | `/api/v1/forecast/` | user | мои задачи |
+| GET | `/api/v1/forecast/{id}/status`, `/result` | user | статус и результат |
+| GET | `/api/v1/forecast/{id}/reasoning` | user | дерево рассуждений + вызовы LLM |
+| POST | `/api/v1/forecast/{id}/hitl` | user | accept / change_model / change_horizon |
+| GET | `/hitl/queue`, `/hitl/stats`, `/hitl/feedback` | editor | очередь на проверку |
+| POST | `/hitl/{id}/confirm`, `/hitl/{id}/reject` | editor | подтверждение (кейс → БЗ) / отклонение |
+| GET | `/api/v1/evaluate/compare` | editor | сравнение моделей на одной выборке |
+| POST | `/api/v1/evaluate/batch` | editor | пакетная оценка → 202 + `run_id` |
+| GET | `/api/v1/evaluate/runs/{id}`, `/results`, `/comparisons` | user | результаты оценки |
+| GET | `/kb/search`, `/kb/cases`, `/glossary/terms` | user | база знаний и справочник |
+| POST/DELETE | `/admin/kb/*`, `/admin/glossary/*` | admin | правка базы знаний и справочника |
+| GET/DELETE | `/admin/cache/stats`, `/admin/cache/clear` | admin | кэш |
+| GET | `/health`, `/healthz` | — | состояние сервисов |
+
+Полная интерактивная документация — Swagger UI (`/docs`).
+
+## 🖥️ Веб-интерфейс (Streamlit)
+
+Запускается отдельно на хосте: это dev-инструмент, в Docker Compose его нет. Меню зависит от роли:
+
+| Страница | user | editor | admin | Что на ней |
+|---|---|---|---|---|
+| Главная | ✓ | ✓ | ✓ | состояние сервисов, быстрый прогноз, навигация |
+| Прогноз | ✓ | ✓ | ✓ | CSV или ввод ряда, статус задачи, график факт/прогноз, метрики, дерево рассуждений |
+| Мои прогнозы | ✓ | ✓ | ✓ | список задач, переход к результату и логам |
+| Логи рассуждений | ✓ | ✓ | ✓ | пошаговое дерево агентов, трассировка LLM-вызовов |
+| Оценка качества | ✓ | ✓ | ✓ | запуск (editor+), таблицы режимов, графики Plotly, значимость |
+| База знаний | ✓ | ✓ | ✓ | поиск похожих кейсов, справочник (правка — admin) |
+| Сравнение моделей | — | ✓ | ✓ | MAE/RMSE моделей, победитель, Wilcoxon и bootstrap-CI |
+| HITL-очередь | — | ✓ | ✓ | очередь, правка, подтверждение/отклонение |
+| Состояние системы | — | — | ✓ | сервисы, кэш и его очистка, переиндексация RAG |
+
+## ⚠️ Известные ограничения
+
+- **Prophet требует CmdStan** (`poetry run python -c "import cmdstanpy; cmdstanpy.install_cmdstan()"`).
+  Без него (а на Windows с нелатинской локалью `cmdstanpy` не может загрузить бэкенд) инструмент
+  возвращает понятную ошибку, остальные модели работают.
+- **TS Foundation Models не установлены** — режим `foundation` пропускается.
+- **Векторный индекс**: в режиме `memory` индекс пересобирается на каждую задачу (~1 с на 1000 кейсов);
+  в режиме `qdrant` переиндексация полная (пересоздание коллекции), не инкрементальная.
+- **Celery-воркер**: `--concurrency=1` — одна тяжёлая задача одновременно.
+- **BM25** лексический: совпадают точные формы слов, без стемминга.
+- **MAPE** нестабилен для рядов около нуля (точка росы, зимняя температура) — опираться на WAPE и MASE.
+- **Климатические пределы** считаются по истории самого ряда, а не по климатическим нормам станции.
+- **Оценка в offline-режиме**: без LLM (`stub`) режим `agents` всегда выбирает ARIMA(1,1,1),
+  поэтому его метрики отражают работу пайплайна, а не качество выбора модели LLM.
+- **Streamlit не в Docker Compose** — запускается на хосте отдельно.
+
+## 🛠 Стек
+
+Python 3.12 · Poetry · FastAPI · SQLAlchemy (async) · PostgreSQL / SQLite · Celery + Redis + beat ·
+Qdrant (или in-memory) + rank-bm25 · statsmodels (ARIMA/SARIMA, STL) · Prophet · XGBoost · scikit-learn (PCA) ·
+LM Studio (OpenAI-совместимый API) / HuggingFace Transformers / внешние API · Streamlit · Plotly ·
+Docker Compose + Nginx · pytest · GitHub Actions.
+
+## 👥 Команда проекта
 
 | Участник | Направление |
 |---|---|
-| **Балабанова Надежда** — ML-инжиниринг и данные | метеодатасеты, предобработка (пропуски, сезонность), feature extraction и эмбеддинги, генерация базы знаний и справочника метеотерминов, качество RAG, метрики и `run_eval.py`, отчёт с анализом |
-| **Саттарова Аделина** — бэкенд и DevOps | FastAPI и REST API, БД и миграции, JWT/роли, агентный слой (base/Supervisor/Tool Calling/LLMManager), Celery/Redis, Docker Compose + Nginx, CI, UI |
-
-Детальное распределение по этапам команда ведёт во внутреннем плане работ.
-
----
-
-## 📁 Структура проекта
-
-```text
-Weather-Forecast-AI/
-├── backend/
-│   ├── agents/            # DataAnalyst, ModelSelector, Validator, Critic, Editor, Supervisor
-│   ├── api/               # FastAPI: main, routes, schemas
-│   ├── core/              # config, models (ForecastState), metrics, llm/ (manager, tools, providers)
-│   ├── timeseries/        # preprocessing, classical (ARIMA/Prophet/XGBoost), foundation (бонус)
-│   ├── data/              # knowledge_base, cache, embeddings
-│   ├── db/                # SQLAlchemy, модели таблиц
-│   ├── evaluation/        # прогоны оценки, агентные метрики
-│   ├── hitl/              # active_learning, feedback
-│   ├── retrieval/         # bm25_index, vector_index, hybrid_retriever (RRF)
-│   ├── utils/             # logging, security (JWT), llm_logger
-│   └── worker/            # Celery-задачи
-├── frontend/              # Chainlit/Gradio (Этап 15)
-├── scripts/               # download_data, generate_knowledge_base, import_data, run_eval
-├── tests/                 # pytest
-├── infrastructure/        # docker-compose, Dockerfile, nginx.conf
-├── data/                  # датасеты (raw/processed, не в git)
-├── pyproject.toml
-└── run.py
-```
-
----
-
-## 🚀 Быстрый старт (локальный режим)
-
-```bash
-git clone https://github.com/nadenka-b/Weather-Forecast-AI.git && cd Weather-Forecast-AI
-poetry install                          # зависимости (бонус-группа: poetry install --with foundation)
-cp .env.example .env                    # настройки (по умолчанию SQLite, без внешних сервисов)
-poetry run python run.py                # API на http://127.0.0.1:8000
-```
-
-Проверки: `GET /healthz` — liveness, `GET /health` — статусы зависимостей (БД + LLM),
-`poetry run pytest` — тесты.
-
-**Режимы LLM** (`LLM_PROVIDER` в `.env`): `lm_studio` — основной, локальный OpenAI-совместимый
-сервер (LM Studio → Developer → Start Server, порт 1234, модель Qwen2.5-7B-Instruct);
-`vllm`, `hf_local` (transformers), `api` (OpenRouter и др.) — альтернативы;
-`stub` — без сети (тесты и офлайн-разработка: заглушки возвращают валидный Tool Call).
-Каждый вызов LLM пишется в таблицу `llm_calls` (модель, токены, latency, статус).
-
-**API прогноза** (нужен JWT; `POST` возвращает 202 и `task_id`, дальше — опрос статуса):
-
-```bash
-TOKEN=$(curl -s -X POST localhost:8000/auth/register -H "Content-Type: application/json" \
-  -d '{"email":"a@b.c","username":"alice","password":"StrongPass1"}' | python -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
-TASK=$(curl -s -X POST localhost:8000/api/v1/forecast/json -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"series_values":[...],"horizon":14,"city":"Jena","variable":"temperature"}' \
-  | python -c "import sys,json;print(json.load(sys.stdin)['task_id'])")
-curl -s localhost:8000/api/v1/forecast/$TASK/status   -H "Authorization: Bearer $TOKEN"  # pending → running → waiting_for_human | completed | failed
-curl -s localhost:8000/api/v1/forecast/$TASK/result   -H "Authorization: Bearer $TOKEN"  # модель, метрики, прогноз, путь к CSV
-curl -s localhost:8000/api/v1/forecast/$TASK/reasoning -H "Authorization: Bearer $TOKEN" # дерево рассуждений + вызовы LLM
-curl -s -X POST localhost:8000/api/v1/forecast/$TASK/hitl -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" -d '{"action":"accept"}'                            # или change_model / change_horizon
-```
-
-Фоновые задачи: `TASK_BACKEND=inline` — выполнение в процессе API (локальная разработка, без Redis);
-`celery` — воркер с брокером Redis (сервис `worker` в docker-compose).
-
-**Оценка качества** (Этап 13) — `scripts/run_eval.py` на holdout-наборе (`data/processed/test_set.jsonl`):
-
-```bash
-# основной прогон: режимы baseline / rag / agents × горизонты × доли данных
-poetry run python scripts/run_eval.py --num-series 50 --horizons 7,14 --data-fractions 1.0
-# кривая «точность vs объём данных»
-poetry run python scripts/run_eval.py --num-series 20 --horizons 14 \
-  --data-fractions 0.1,0.2,0.5,1.0 --mode baseline --out-dir data/eval/fractions
-```
-
-Режимы: `baseline` — классика без LLM (сетка моделей), `rag` — выбор модели по кейсам базы знаний,
-`agents` — полный цикл агентов, `foundation` — TS Foundation Models (бонус). Метрики MAE/RMSE/MAPE/WAPE/MASE
-+ агентные (итерации, доля HITL, токены, время); сравнение режимов — Diebold-Mariano, Wilcoxon,
-bootstrap-CI, paired t-test. Результаты: `data/eval/` (`results.jsonl`, `summary.csv`, `comparisons.json`,
-`eval.log`) и в БД (`evaluation_results`, `model_comparisons`). API: `GET /api/v1/evaluate/compare`,
-`POST /api/v1/evaluate/batch`, `GET /api/v1/evaluate/runs/{run_id}`, `GET /api/v1/evaluate/results`.
-
-**Human-in-the-Loop** (Этап 14) — задачи, где цикл агентов не сошёлся (Critic ниже порога / валидация не прошла),
-попадают в статус `waiting_for_human` и в очередь эксперта (роли editor/admin):
-
-```bash
-curl -s localhost:8000/hitl/queue  -H "Authorization: Bearer $EDITOR_TOKEN"   # очередь + причины (critic, validator)
-curl -s localhost:8000/hitl/stats  -H "Authorization: Bearer $EDITOR_TOKEN"   # {pending, confirmed, rejected}
-curl -s -X POST localhost:8000/hitl/$TASK/confirm -H "Authorization: Bearer $EDITOR_TOKEN"   -H "Content-Type: application/json" -d '{"comment":"принято"}'                # кейс -> база знаний + переиндексация RAG
-curl -s -X POST localhost:8000/hitl/$TASK/reject  -H "Authorization: Bearer $EDITOR_TOKEN"   -H "Content-Type: application/json" -d '{"reason":"модель не подходит"}'      # база знаний не меняется
-```
-
-Подтверждение с правкой (`{"model_type": "fit_xgboost", "model_params": {...}}`) перевыполняет прогноз, и в базу
-знаний попадает уже исправленный кейс (active learning). Цикл коррекции `Editor → Validator → Critic`:
-Editor меняет гиперпараметры по замечаниям (совет LLM или правила: SARIMA при сезонности, рост порядка AR
-при автокорреляции остатков, больше лагов для XGBoost) и переобучает модель; Supervisor откатывает правку при регрессии.
-
-**Кэш** — результаты LLM и прогнозов кэшируются в таблице `cache` (счётчик попаданий; `CACHE_ENABLED=false` отключает).
-`GET /cache/stats` (editor/admin), `DELETE /cache/clear` (admin); beat чистит записи старше 30 дней раз в сутки
-(`clear_cache_task`, можно добавить `max_hits`, чтобы сохранять популярные).
-
-Docker-стек Этапа 3 — PostgreSQL + приложение (оба сервиса проходят healthcheck):
-
-```bash
-cd infrastructure
-cp .env.example .env                 # задайте JWT_SECRET
-docker compose up -d --build
-curl http://localhost:8000/health    # {"status":"healthy", ...}
-```
-
-LM Studio (локальный OpenAI-совместимый сервер: приложение LM Studio → Developer → Start Server,
-порт 1234, модель Qwen2.5-7B-Instruct), а также Redis и Qdrant подключаются на Этапах 10–11;
-полный стек (worker + beat + nginx) собирается на Этапе 15.
-
----
-
-## 📊 Датасеты
-
-| Датасет | Тип | Признаки |
-|---|---|---|
-| **Jena Climate** (Kaggle/UCI) | 10-мин метеоряд, 2009–2016 | T, давление, влажность, ветер и др. (~14) |
-| `sumanthvrao/daily-climate-time-series-data` | дневной ряд (Дели) | meantemp, humidity, wind_speed, pressure (4 + лаги/календарь) |
-| **Monash TSF** (weather) | наборы погодных рядов | зависит от набора |
-
-Загрузка: `poetry run python scripts/download_data.py` (kagglehub). Для каждого датасета число признаков фиксируется в отчёте (минимум 5; при нехватке — лаги, скользящие статистики, календарные признаки).
+| **Балабанова Надежда** | ML-инжиниринг и данные: датасеты, предобработка рядов, база знаний и справочник, признаки и эмбеддинги, гибридный RAG, метрики, `run_eval.py`, статистические тесты, отчёт |
+| **Саттарова Аделина** | Бэкенд и DevOps: FastAPI и REST API, БД, JWT и роли, агентный слой (Supervisor, Tool Calling, Critic, Editor), фоновые задачи, HITL-роуты, кэш, Streamlit UI, Docker Compose + Nginx, CI |

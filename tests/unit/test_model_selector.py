@@ -1,6 +1,5 @@
 """Юнит-тесты агента ModelSelector (Этап 7) и интеграция с Supervisor."""
 import numpy as np
-import pandas as pd
 
 from backend.agents.data_analyst import DataAnalyst
 from backend.agents.model_selector import ModelSelector

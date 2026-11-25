@@ -202,7 +202,7 @@ class TestPipeline:
             return st
 
         monkeypatch.setattr(pipeline, "perform_forecast", fake_perform)
-        result_state = await pipeline.run_forecast(task["id"])
+        await pipeline.run_forecast(task["id"])
         updated = await repo.get(task["id"])
         assert updated["status"] == "waiting_for_human"
         assert updated["hitl_requested"] is True
@@ -374,7 +374,6 @@ class TestEnsureTables:
     async def test_ensure_tables_once_creates_missing_tables(self, monkeypatch):
         import backend.db.session as db_session_module
         from sqlalchemy import text
-        from sqlalchemy.exc import OperationalError
 
         from backend.db.session import ensure_tables_once
 

@@ -20,7 +20,6 @@ from backend.evaluation.runner import (
     DEFAULT_TEST_SET,
     MODES,
     EvalConfig,
-    compare_modes,
     load_test_windows,
     split_window,
 )

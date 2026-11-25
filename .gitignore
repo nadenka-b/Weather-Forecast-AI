@@ -21,6 +21,9 @@ data/uploads/
 data/forecasts/
 data/eval/
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
 *.sqlite3
 eval.log
 reports/

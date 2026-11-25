@@ -1,7 +1,6 @@
 """Юнит-тесты агента Validator (Этап 8)."""
 import numpy as np
 import pandas as pd
-import pytest
 
 from backend.agents.validator import Validator
 from backend.core.models import ForecastState

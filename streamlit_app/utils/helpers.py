@@ -1,6 +1,5 @@
 # streamlit_app/utils/helpers.py
 """Утилиты отображения (методичка Step_12, п. 12.4) и разбор входных данных."""
-import csv
 import io
 from typing import Optional
 

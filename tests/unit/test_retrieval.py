@@ -6,9 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import StaticPool
 
 from backend.agents.supervisor import build_supervisor
+from backend.data import knowledge_base
 from backend.core.models import ForecastState
 from backend.data.embeddings import CaseVectorizer, case_to_vector_features
-from backend.db.models import Base, KnowledgeCase, ReasoningLog
+from backend.db.models import Base, ReasoningLog
 from backend.retrieval.bm25_index import BM25Index, tokenize
 from backend.retrieval.hybrid_retriever import HybridRetriever
 from backend.retrieval.vector_index import InMemoryVectorIndex
@@ -260,3 +261,132 @@ class TestBuildSupervisor:
         # состояние обработано полным пайплайном
         assert result.model_type in ("arima", "sarima", "naive_seasonal", "xgboost")
         assert result.diagnostics is not None
+
+
+# ============================================================================
+# Прод-режим VECTOR_BACKEND=qdrant (Этап 15): настоящий qdrant-client в памяти
+# ============================================================================
+def _memory_qdrant():
+    from qdrant_client import QdrantClient
+
+    return QdrantClient(":memory:")
+
+
+class TestQdrantVectorIndex:
+    def test_point_id_is_deterministic_uuid(self):
+        import uuid
+
+        from backend.retrieval.vector_index import point_id
+
+        assert point_id("kb|x|1") == point_id("kb|x|1")
+        assert point_id("kb|x|1") != point_id("kb|x|2")
+        uuid.UUID(point_id("kb|x|1"))  # валидный UUID
+
+    def test_upsert_is_idempotent_and_search_works(self):
+        from backend.data.embeddings import CaseVectorizer, case_to_vector_features
+        from backend.retrieval.vector_index import QdrantVectorIndex
+
+        rows = [case_to_vector_features(case["features"]) for case in CORPUS]
+        vectorizer = CaseVectorizer().fit(rows)
+        vectors = vectorizer.transform(rows)
+        index = QdrantVectorIndex("cases_test", client=_memory_qdrant())
+
+        index.add(CORPUS, vectors)
+        assert index.count() == 5
+        index.add(CORPUS, vectors)          # повторная переиндексация — без дублей
+        assert index.count() == 5
+
+        query = vectorizer.transform_one(CORPUS[2]["features"])
+        assert index.search(query, top_k=1)[0][0] == "c_humid"
+        assert [sid for sid, _ in index.search(query, top_k=5, filters={"city": "Delhi"})] == [
+            "c_delhi_temp"
+        ]
+        temperature = [sid for sid, _ in index.search(query, top_k=5, filters={"variable": "temperature"})]
+        assert set(temperature) == {"c_temp_week", "c_temp_year", "c_delhi_temp"}
+
+        index.ensure_collection(vectors.shape[1], recreate=True)
+        assert index.count() == 0  # полная переиндексация: пересоздание коллекции
+
+
+class TestHybridWithQdrant:
+    def test_backend_is_qdrant(self):
+        from backend.retrieval.vector_index import QdrantVectorIndex
+
+        retriever = HybridRetriever(CORPUS, vector_index=QdrantVectorIndex("hybrid_test", client=_memory_qdrant()))
+        retriever.index.add(
+            CORPUS,
+            retriever.vectorizer.transform([case_to_vector_features(c["features"]) for c in CORPUS]),
+        )
+        assert retriever.backend == "qdrant"
+        results = retriever.retrieve(CORPUS[2]["features"], "humidity сезонность 7 XGBoost", top_k=3)
+        assert results[0].case["series_id"] == "c_humid"
+        assert results[0].vector_rank == 1
+
+    def test_falls_back_to_memory_when_qdrant_is_down(self):
+        from backend.retrieval.vector_index import QdrantVectorIndex
+
+        retriever = HybridRetriever(CORPUS, vector_index=QdrantVectorIndex("hybrid_test", client=_memory_qdrant()))
+
+        class Broken:
+            def search(self, *args, **kwargs):
+                raise ConnectionError("qdrant is down")
+
+        retriever.index = Broken()
+        results = retriever.retrieve(CORPUS[0]["features"], "temperature Jena сезонность", top_k=3)
+        assert results and results[0].case["series_id"] == "c_temp_week"  # in-memory индекс
+
+    def test_default_backend_is_memory(self):
+        assert HybridRetriever(CORPUS).backend == "memory"
+
+
+@pytest.mark.usefixtures("memory_db")
+class TestQdrantWiring:
+    async def test_build_attaches_qdrant_when_enabled(self, memory_db, monkeypatch):
+        import backend.retrieval.hybrid_retriever as retriever_module
+        from backend.core.config import get_settings
+        from backend.retrieval.hybrid_retriever import build_hybrid_retriever
+        from backend.retrieval.vector_index import QdrantVectorIndex
+
+        await knowledge_base.import_cases(CORPUS)
+        monkeypatch.setattr(get_settings(), "vector_backend", "qdrant")
+        monkeypatch.setattr(
+            retriever_module, "QdrantVectorIndex",
+            lambda collection, url=None: QdrantVectorIndex(collection, client=_memory_qdrant()),
+        )
+        retriever = await build_hybrid_retriever()
+        assert retriever.backend == "qdrant"
+        assert retriever.index.count() == 5  # первичная загрузка в пустую коллекцию
+
+    async def test_build_falls_back_when_qdrant_unavailable(self, memory_db, monkeypatch):
+        import backend.retrieval.hybrid_retriever as retriever_module
+        from backend.core.config import get_settings
+        from backend.retrieval.hybrid_retriever import build_hybrid_retriever
+
+        await knowledge_base.import_cases(CORPUS)
+        monkeypatch.setattr(get_settings(), "vector_backend", "qdrant")
+
+        def broken(*args, **kwargs):
+            raise ConnectionError("qdrant is down")
+
+        monkeypatch.setattr(retriever_module, "QdrantVectorIndex", broken)
+        retriever = await build_hybrid_retriever()  # без исключения
+        assert retriever.backend == "memory"
+        assert retriever.retrieve(CORPUS[0]["features"], "temperature", top_k=1)
+
+    async def test_reindex_rag_targets_qdrant(self, memory_db, monkeypatch):
+        import backend.retrieval.vector_index as vector_module
+        from backend.core.config import get_settings
+        from backend.data.knowledge_base import reindex_rag
+
+        await knowledge_base.import_cases(CORPUS)
+        monkeypatch.setattr(get_settings(), "vector_backend", "qdrant")
+        created = {}
+
+        def factory(collection, url=None):
+            created["index"] = original(collection, client=_memory_qdrant())
+            return created["index"]
+
+        original = vector_module.QdrantVectorIndex
+        monkeypatch.setattr(vector_module, "QdrantVectorIndex", factory)
+        assert await reindex_rag() == {"cases": 5, "target": "qdrant"}
+        assert created["index"].count() == 5

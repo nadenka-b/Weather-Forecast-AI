@@ -6,7 +6,6 @@ import pytest
 from backend.core.llm.manager import LLMManager, parse_tool_json
 from backend.core.llm.tools import (
     ToolArgumentError,
-    ToolRegistry,
     UnknownToolError,
     build_default_registry,
 )
@@ -17,6 +16,7 @@ from backend.timeseries.classical import (
     fit_tabular_xgboost,
     fit_xgboost,
     make_lag_features,
+    make_prophet,
     time_split,
 )
 
@@ -211,6 +211,13 @@ class TestClassicalModels:
 
     def test_fit_prophet(self):
         pytest.importorskip("prophet", reason="prophet не установлен в этом окружении")
+        # Prophet >= 1.2 требует CmdStan; без него (или на Windows с нелатинской
+        # локалью cmdstanpy не читает вывод where.exe) бэкенд не загружается
+        try:
+            make_prophet()
+        except ToolExecutionError as exc:
+            pytest.skip(f"Stan-бэкенд Prophet недоступен: {exc}")
+
         result = fit_prophet(seasonal_series(220), horizon=14)
         assert result["model"] == "prophet"
         assert np.isfinite(result["metrics"]["mae"])

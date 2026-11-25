@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import StaticPool
 
 from backend.data import knowledge_base
-from backend.db.models import Base, GlossaryTerm, KnowledgeCase
+from backend.db.models import Base, KnowledgeCase
 
 SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 

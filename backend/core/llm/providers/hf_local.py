@@ -104,7 +104,7 @@ class HFLocalProvider:
             text = await asyncio.to_thread(
                 partial(self._generate, prompt, max_tokens or 512, temperature)
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             await log_llm_call(
                 agent_name=self.agent_name or current_agent_name.get(), model_name=self.model,
                 provider=self.name, prompt=prompt, response=None,

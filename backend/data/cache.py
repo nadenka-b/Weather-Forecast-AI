@@ -101,7 +101,7 @@ class CacheManager:
         В отличие от референса (Step_11, п. 11.8) учитывает популярность:
         часто используемая запись не удаляется только из-за возраста.
         """
-        from sqlalchemy import delete, func, select
+        from sqlalchemy import delete, select
 
         from backend.db.models import ForecastCache
         from backend.db.session import AsyncSessionLocal

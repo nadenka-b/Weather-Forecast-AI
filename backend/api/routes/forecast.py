@@ -257,7 +257,7 @@ async def get_forecast_result(
 async def get_forecast_reasoning(
     task_id: str, current_user: User = Depends(get_current_user)
 ) -> ReasoningResponse:
-    task = _ensure_access(await TaskRepository().get(task_id), current_user)
+    _ensure_access(await TaskRepository().get(task_id), current_user)
     tree = await fetch_reasoning_tree(task_id)
 
     from backend.db.session import AsyncSessionLocal

@@ -8,7 +8,6 @@ import streamlit as st
 from utils import api_client, charts
 from utils.auth_guard import logout_button, require_login
 from utils.helpers import (
-    csv_to_series,
     format_score,
     parse_series,
     render_llm_calls,

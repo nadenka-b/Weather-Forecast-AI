@@ -1,7 +1,5 @@
 """Юнит-тесты агента Critic (Этап 8) и сквозная цепочка агентов."""
 import numpy as np
-import pandas as pd
-import pytest
 
 from backend.agents.critic import (
     Critic,
