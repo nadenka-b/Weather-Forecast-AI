@@ -6,12 +6,17 @@
 import argparse
 import asyncio
 import sys
+from pathlib import Path
 
 from sqlalchemy import select
 
-from backend.db.models import User
-from backend.db.session import AsyncSessionLocal
-from backend.utils.security import get_password_hash
+BASE_DIR = Path(__file__).resolve().parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))  # прямой запуск: python scripts/...
+
+from backend.db.models import User  # noqa: E402
+from backend.db.session import AsyncSessionLocal  # noqa: E402
+from backend.utils.security import get_password_hash  # noqa: E402
 
 
 async def create_admin(email: str, username: str, password: str) -> None:
