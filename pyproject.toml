@@ -60,6 +60,11 @@ respx = "^0.21"
 ruff = "^0.7"
 # графики для отчёта (scripts/report_tables.py)
 matplotlib = "^3.9"
+# интерфейс Streamlit (методичка Step_12: dev-инструмент, не часть бэкенда) —
+# ставится в venv проекта вместе со всем остальным, глобальный pip не нужен
+streamlit = "^1.40"
+# streamlit_app/utils/api_client.py работает через requests
+requests = "^2.31"
 
 # Бонус (+5%): TS Foundation Models для режима +foundation (Этапы 7/13).
 # Установка: poetry install --with foundation

@@ -1,3 +1,7 @@
+# Зависимости интерфейса Streamlit.
+# При работе через Poetry НЕ нужны отдельно: streamlit и requests — dev-зависимости
+# проекта (poetry install ставит их в venv), pandas и plotly — основные зависимости.
+# Файл — справочник на случай запуска интерфейса без Poetry: pip install -r ...
 streamlit>=1.40.0
 requests>=2.31
 pandas>=2.0

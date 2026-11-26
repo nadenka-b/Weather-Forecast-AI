@@ -139,10 +139,14 @@ poetry run python scripts/create_admin.py --email admin@example.com --username a
 
 ### Интерфейс
 
+Зависимости интерфейса (streamlit, requests, plotly) объявлены dev-зависимостями Poetry и
+ставятся `poetry install` **в venv проекта** — глобальный pip не нужен.
+
 ```bash
-pip install -r streamlit_app/requirements.txt
-streamlit run streamlit_app/app.py --server.port 8501
+poetry run streamlit run streamlit_app/app.py --server.port 8501
 ```
+
+`streamlit_app/requirements.txt` — справочник тех же зависимостей на случай запуска без Poetry.
 
 ## 📊 Данные
 
