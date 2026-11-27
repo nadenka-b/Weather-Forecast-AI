@@ -7,7 +7,9 @@ import streamlit as st
 
 from utils import api_client, charts
 from utils.auth_guard import logout_button, require_login
+from utils.constants import CITIES
 from utils.helpers import (
+    city_value,
     format_score,
     parse_series,
     render_llm_calls,
@@ -105,7 +107,7 @@ with tab_file:
     file = st.file_uploader("CSV ряда (date,value) или (value)", type="csv", key="fc_file")
     c1, c2, c3 = st.columns(3)
     horizon = c1.slider("Горизонт, дней", 1, 60, 14, key="fc_horizon")
-    city = c2.selectbox("Город", ["Jena", "Delhi"], key="fc_city")
+    city = c2.selectbox("Город", CITIES, key="fc_city")
     variable = c3.selectbox(
         "Переменная", ["temperature", "humidity", "pressure", "wind_speed",
                        "precipitation", "dew_point"], key="fc_variable",
@@ -118,7 +120,9 @@ with tab_file:
         st.session_state["forecast_result"] = None
     st.session_state["fc_key"] = fc_key
     if st.button("🚀 Запустить прогноз", type="primary", disabled=file is None, key="fc_run"):
-        accepted = api_client.create_forecast_file(file, horizon=horizon, city=city, variable=variable)
+        accepted = api_client.create_forecast_file(
+            file, horizon=horizon, city=city_value(city), variable=variable
+        )
         if accepted and accepted.get("task_id"):
             st.session_state["forecast_result"] = accepted["task_id"]
             st.rerun()
@@ -128,7 +132,7 @@ with tab_manual:
                         height=150, key="fc_text")
     c1, c2, c3 = st.columns(3)
     m_horizon = c1.slider("Горизонт, дней", 1, 60, 14, key="m_horizon")
-    m_city = c2.selectbox("Город ", ["Jena", "Delhi"], key="m_city")
+    m_city = c2.selectbox("Город ", CITIES, key="m_city")
     m_variable = c3.selectbox(
         "Переменная ", ["temperature", "humidity", "pressure", "wind_speed",
                         "precipitation", "dew_point"], key="m_variable",
@@ -147,7 +151,7 @@ with tab_manual:
                 st.error("Нужно не менее 30 точек")
             else:
                 accepted = api_client.create_forecast_json(
-                    values, horizon=m_horizon, city=m_city, variable=m_variable
+                    values, horizon=m_horizon, city=city_value(m_city), variable=m_variable
                 )
                 if accepted and accepted.get("task_id"):
                     st.session_state["forecast_result"] = accepted["task_id"]

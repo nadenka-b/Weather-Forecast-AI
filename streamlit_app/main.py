@@ -5,7 +5,8 @@ import streamlit as st
 
 from utils import api_client
 from utils.auth_guard import logout_button, require_login
-from utils.helpers import csv_to_series, status_label
+from utils.constants import CITIES
+from utils.helpers import city_value, csv_to_series, status_label
 
 st.set_page_config(page_title="Главная — Weather Forecast AI", page_icon="🌤", layout="wide")
 require_login()
@@ -47,7 +48,7 @@ with left:
     with c1:
         horizon = st.slider("Горизонт, дней", 1, 60, 14, key="quick_horizon")
     with c2:
-        city = st.selectbox("Город", ["Jena", "Delhi"], key="quick_city")
+        city = st.selectbox("Город", CITIES, key="quick_city")
     with c3:
         variable = st.selectbox(
             "Переменная",
@@ -67,7 +68,7 @@ with left:
             st.error("Ряд слишком короткий: нужно не менее 30 точек")
         else:
             result = api_client.create_forecast_json(
-                values, horizon=horizon, city=city, variable=variable
+                values, horizon=horizon, city=city_value(city), variable=variable
             )
             if result and result.get("task_id"):
                 st.session_state["quick_result"] = result["task_id"]

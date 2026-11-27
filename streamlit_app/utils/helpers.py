@@ -15,6 +15,11 @@ def filter_value(label: Optional[str]) -> Optional[str]:
     return None if not label or label == constants.ALL else label
 
 
+def city_value(label: Optional[str]) -> Optional[str]:
+    """«Другой / без города» -> None (фильтр города в RAG отключается)."""
+    return None if not label or label == constants.NO_CITY else label
+
+
 def short(text: str, n: int = 60) -> str:
     text = (text or "").strip()
     return text if len(text) <= n else text[:n] + "..."

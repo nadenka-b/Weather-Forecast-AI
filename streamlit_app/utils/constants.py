@@ -19,8 +19,11 @@ VARIABLES = {
     "dew_point": "Точка росы",
 }
 
-# Города датасетов (Jena Climate, Daily Climate Delhi)
-CITIES = ["Jena", "Delhi"]
+# Города датасетов (Jena Climate, Daily Climate Delhi). NO_CITY — ряд без привязки
+# к городу: в API уходит city=None, фильтр города в RAG отключается и поиск
+# похожих кейсов идёт по всей базе знаний.
+NO_CITY = "Другой / без города"
+CITIES = ["Jena", "Delhi", NO_CITY]
 
 # Именованные модели для GET /api/v1/evaluate/compare
 MODELS = ["naive", "arima", "sarima", "xgboost", "prophet"]
