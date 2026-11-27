@@ -27,7 +27,8 @@ Pydantic) передаётся между агентами только по с�
   XGBoost для табличных задач; fallback — 3 попытки Tool Calling, затем SARIMA-автоподбор.
 - **Валидация**: климатические пределы, NaN и длина прогноза, Ljung-Box и Shapiro-Wilk на остатках.
 - **Critic (LLM-as-a-Judge)** и **Editor**: правка гиперпараметров по замечаниям с переобучением.
-- **Human-in-the-Loop**: очередь на проверку, подтверждение (кейс → база знаний, active learning)
+- **Human-in-the-Loop**: очередь на проверку, подтверждение (кейс → база знаний, только если
+  прогноз лучше наивного; active learning)
   и отклонение; решение с правкой модели перевыполняет прогноз.
 - **Оценка качества**: `run_eval.py` (режимы × горизонты × доли данных, агентные метрики,
   Diebold-Mariano / Wilcoxon / bootstrap-CI / t-test), API сравнения моделей.
@@ -200,7 +201,7 @@ poetry run python scripts/report_tables.py          # таблицы и граф
 | GET | `/api/v1/forecast/{id}/reasoning` | user | дерево рассуждений + вызовы LLM |
 | POST | `/api/v1/forecast/{id}/hitl` | user | accept / change_model / change_horizon |
 | GET | `/hitl/queue`, `/hitl/stats`, `/hitl/feedback` | editor | очередь на проверку |
-| POST | `/hitl/{id}/confirm`, `/hitl/{id}/reject` | editor | подтверждение (кейс → БЗ) / отклонение |
+| POST | `/hitl/{id}/confirm`, `/hitl/{id}/reject` | editor | подтверждение (кейс → БЗ, если MASE < 1) / отклонение |
 | GET | `/api/v1/evaluate/compare` | editor | сравнение моделей на одной выборке |
 | POST | `/api/v1/evaluate/batch` | editor | пакетная оценка → 202 + `run_id` |
 | GET | `/api/v1/evaluate/runs/{id}`, `/results`, `/comparisons` | user | результаты оценки |

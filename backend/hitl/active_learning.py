@@ -4,9 +4,10 @@
 waiting_for_human (Supervisor ставит hitl_requested, когда цикл не сошёлся
 или Critic ниже порога). Эксперт (editor/admin) видит очередь и решает:
 
-- confirm_correction — атомарно в одной транзакции: кейс добавляется в базу
-  знаний (active learning: подтверждённый прогноз становится примером для
-  RAG), задача переводится в completed, пишется строка hitl_feedback;
+- confirm_correction — атомарно в одной транзакции: задача переводится в
+  completed и пишется строка hitl_feedback; кейс добавляется в базу знаний
+  (active learning: подтверждённый прогноз становится примером для RAG), только
+  если он лучше наивного (MASE ниже HITL_KB_MAX_MASE, по умолчанию 1.0);
   опционально эксперт может указать другую модель/параметры — тогда прогноз
   сначала перевыполняется с ней;
 - reject_example — задача отклоняется (rejected), база знаний не меняется.
@@ -21,6 +22,7 @@ from typing import Any
 
 from sqlalchemy import func, select
 
+from backend.core.config import get_settings
 from backend.core.models import ForecastState
 from backend.db.models import ForecastTask, HitlFeedback, KnowledgeCase
 
@@ -96,7 +98,16 @@ def build_kb_case(task: ForecastTask, state: ForecastState) -> dict[str, Any] | 
             f"Подтверждён экспертом (HITL): ряд {variable} ({city}), горизонт {state.horizon}; "
             f"модель {state.model_type}, MASE {metrics.get('mase')}, MAE {metrics.get('mae')}."
         ),
-    }
+        }
+
+
+def _worth_learning(metrics: dict[str, Any] | None) -> bool:
+    """Становится ли подтверждённый прогноз кейсом базы знаний: MASE ниже порога
+    (по умолчанию 1.0 — лучше наивного прогноза); нет MASE — нет."""
+    try:
+        return float(metrics["mase"]) < get_settings().hitl_kb_max_mase
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 class ActiveLearningManager:
@@ -187,6 +198,15 @@ class ActiveLearningManager:
         state.hitl_resolution = {"action": "accept", "correction": correction}
 
         kb_case = build_kb_case(task, state)
+        if kb_case is not None and not _worth_learning(kb_case["metrics"]):
+            # задача попадает в HITL, когда цикл не сошёлся: подтверждение «как есть»
+            # не делает неудачный прогноз успешным кейсом — учимся только на лучших
+            # наивного; само подтверждение задачу закрывает
+            logger.info(
+                "HITL confirm: task=%s — кейс не добавлен в базу знаний (MASE %s)",
+                task_id, kb_case["metrics"].get("mase"),
+            )
+            kb_case = None
         kb_inserted = False
         async with AsyncSessionLocal() as session:
             try:

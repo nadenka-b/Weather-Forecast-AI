@@ -255,7 +255,11 @@ class TestAdmin:
 # Алиасы HITL по путям методички
 # ============================================================================
 class TestHitlAliases:
-    def test_uncertain_paths(self, api):
+    def test_uncertain_paths(self, api, monkeypatch):
+        # тестовый ряд (еженедельной сезонности) даёт у stub-ARIMA MASE ~11: звено
+        # «подтверждение -> база знаний» проверяем с снятым порогом качества (сам фильтр
+        # по MASE — в юнит-тестах, test_stage14)
+        monkeypatch.setattr(get_settings(), "hitl_kb_max_mase", float("inf"))
         client = api["client"]
         owner = register(api, "own@example.com")
         editor = register(api, "ed2@example.com", role="editor")

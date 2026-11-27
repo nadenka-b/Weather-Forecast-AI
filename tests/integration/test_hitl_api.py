@@ -128,7 +128,11 @@ class TestHitlQueue:
         # фильтр по городу
         assert client.get("/hitl/queue", params={"city": "Delhi"}, headers=editor).json()["examples"] == []
 
-    def test_confirm_populates_knowledge_base(self, api):
+    def test_confirm_populates_knowledge_base(self, api, monkeypatch):
+        # тестовый ряд (еженедельной сезонности) даёт у stub-ARIMA MASE ~11: здесь
+        # проверяется само звено «подтверждение -> база знаний», поэтому порог качества
+        # снимаем; фильтр по MASE проверяется юнит-тестами (test_stage14)
+        monkeypatch.setattr(get_settings(), "hitl_kb_max_mase", float("inf"))
         client = api["client"]
         owner = register(api, "owner2@example.com")
         editor = register(api, "editor2@example.com", role="editor")

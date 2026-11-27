@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     # Агентный цикл
     max_iterations: int = 3
     critic_pass_threshold: float = 7.0  # Critic ниже порога -> итерация Editor / HITL
+    # Подтверждённый в HITL прогноз становится кейсом базы знаний, только если его
+    # MASE ниже порога (1.0 = лучше наивного): active learning на удачных кейсах
+    hitl_kb_max_mase: float = 1.0
 
     # Данные
     data_dir: Path = BASE_DIR / "data"

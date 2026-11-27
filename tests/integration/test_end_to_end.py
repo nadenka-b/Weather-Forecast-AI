@@ -71,8 +71,12 @@ def promote(client, email: str, role: str) -> None:
     client["http"].portal.call(_promote)
 
 
-def test_full_user_journey(client):
+def test_full_user_journey(client, monkeypatch):
     http = client["http"]
+    # тестовый ряд (еженедельной сезонности) даёт у stub-ARIMA MASE > 1: звено
+    # «подтверждение -> база знаний» проверяем с снятым порогом качества (сам фильтр
+    # по MASE — в юнит-тестах, test_stage14)
+    monkeypatch.setattr(get_settings(), "hitl_kb_max_mase", float("inf"))
 
     # 1. Register
     reg = http.post("/auth/register", json={

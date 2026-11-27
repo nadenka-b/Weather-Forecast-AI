@@ -390,6 +390,20 @@ class TestActiveLearning:
         assert result["kb_inserted"] is False
         assert (await TaskRepository().get(task_id))["status"] == "completed"
 
+    async def test_confirm_skips_kb_when_forecast_not_better_than_naive(self, memory_db):
+        task_id = await waiting_task(memory_db)
+        task = await TaskRepository().get(task_id)
+        state = ForecastState(**task["state"])
+        state.metadata["val_metrics"]["mase"] = 1.2  # хуже наивного прогноза
+        await TaskRepository().save_state(task_id, state, status="waiting_for_human")
+
+        result = await ActiveLearningManager.confirm_correction(task_id)
+
+        assert result["status"] == "completed" and result["kb_inserted"] is False
+        assert result["kb_case_id"] is None
+        async with memory_db() as session:
+            assert (await session.execute(select(KnowledgeCase))).scalars().all() == []
+
     async def test_stats_single_result(self, memory_db):
         first = await waiting_task(memory_db)
         second = await waiting_task(memory_db)

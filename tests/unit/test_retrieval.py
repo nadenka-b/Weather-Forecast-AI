@@ -91,19 +91,20 @@ class TestBM25:
 class TestVectorizer:
     def test_case_to_vector_features_fixed_order(self):
         row = case_to_vector_features(CORPUS[0]["features"])
-        assert len(row) == 12 + 7  # числовые + one-hot переменных
-        assert row[0] == 365
-        assert row[12] == 1.0  # temperature
-        assert sum(row[12:]) == 1
+        assert len(row) == 11 + 7  # числовые (без length) + one-hot переменных
+        assert row[0] == 15.0  # mean: length в вектор не входит
+        assert 365 not in row
+        assert row[11] == 1.0  # temperature
+        assert sum(row[11:]) == 1
 
     def test_none_values_become_zero(self):
         row = case_to_vector_features({"variable": None})
-        assert row[0] == 0.0 and sum(row[12:]) == 0
+        assert row[0] == 0.0 and sum(row[11:]) == 0
 
     def test_fit_transform_l2_normalized(self):
         rows = [case_to_vector_features(case["features"]) for case in CORPUS]
         vectorizer = CaseVectorizer(target_dim=128).fit(rows)
-        assert vectorizer.dim <= min(19, len(CORPUS))
+        assert vectorizer.dim <= min(18, len(CORPUS))
         vectors = vectorizer.transform(rows)
         assert vectors.shape == (len(CORPUS), vectorizer.dim)
         norms = np.linalg.norm(vectors, axis=1)
