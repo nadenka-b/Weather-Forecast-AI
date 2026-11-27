@@ -357,13 +357,23 @@ async def build_supervisor(
     from backend.agents.editor import Editor
     from backend.agents.model_selector import ModelSelector
     from backend.agents.validator import Validator
+    from backend.core.llm.manager import get_llm_manager
+
+    manager = get_llm_manager()
+
+    async def _editor_advice(prompt: str) -> str:
+        """LLM-совет по правке (Editor валидирует и падает на правила при сбое)."""
+        return await manager.complete(prompt, max_tokens=300)
 
     agents: dict[str, BaseAgent] = {
         "data_analyst": DataAnalyst(),
         "model_selector": ModelSelector(),
         "validator": Validator(),
         "critic": Critic(),
-        "editor": Editor(),  # цикл коррекции: Editor -> Validator -> Critic (Этап 14)
+        # цикл коррекции: Editor -> Validator -> Critic (Этап 14).
+        # Совет LLM подключается только с реальным провайдером: в offline
+        # (stub/тесты) Editor остаётся на детерминированных правилах.
+        "editor": Editor(advisor=None if manager.uses_stub else _editor_advice),
     }
     try:
         from backend.retrieval.hybrid_retriever import build_hybrid_retriever
