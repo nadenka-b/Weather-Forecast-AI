@@ -89,6 +89,10 @@ REASONING = {
     "llm_calls": [{"agent_name": "model_selector", "model_name": "qwen", "provider": "lm_studio",
                    "tokens_in": 120, "tokens_out": 18, "latency_ms": 900.0, "status": "success"}],
 }
+HITL_ITEM = {"task_id": "task-9", "status": "waiting_for_human", "city": "Jena",
+             "variable": "temperature", "model_type": "arima", "critic_score": 5.0,
+             "critic_reasoning": "сезонность", "critic_suggestions": ["проверить сезонность"],
+             "validator_errors": [], "stopped_reason": "no_change", "iterations": 1}
 
 
 # ============================================================================
@@ -314,13 +318,9 @@ class TestHitlPage:
         assert any("editor" in e.value for e in at.error)
 
     def test_queue_and_confirm(self, fake_api):
-        item = {"task_id": "task-9", "status": "waiting_for_human", "city": "Jena",
-                "variable": "temperature", "model_type": "arima", "critic_score": 5.0,
-                "critic_reasoning": "сезонность", "critic_suggestions": ["проверить сезонность"],
-                "validator_errors": [], "stopped_reason": "no_change", "iterations": 1}
         fake_api.routes.update({
             ("GET", "/hitl/stats"): {"pending": 1, "confirmed": 0, "rejected": 0},
-            ("GET", "/hitl/queue"): {"count": 1, "examples": [item]},
+            ("GET", "/hitl/queue"): {"count": 1, "examples": [HITL_ITEM]},
             ("POST", "/hitl/task-9/confirm"): {"task_id": "task-9", "status": "completed",
                                                "kb_inserted": True},
             ("GET", "/hitl/feedback"): {"feedback": []},
@@ -341,6 +341,44 @@ class TestHitlPage:
         })
         at = run_page("pages/6_HITL_Queue.py", EDITOR)
         assert any("Очередь пуста" in s.value for s in at.success)
+
+    def test_new_task_shows_without_changing_filters(self, fake_api):
+        """Задача, попавшая в очередь при открытой странице, видна без смены фильтров."""
+        fake_api.routes.update({
+            ("GET", "/hitl/stats"): {"pending": 0, "confirmed": 0, "rejected": 0},
+            ("GET", "/hitl/queue"): {"count": 0, "examples": []},
+            ("GET", "/hitl/feedback"): {"feedback": []},
+        })
+        at = run_page("pages/6_HITL_Queue.py", EDITOR)
+        assert any("Очередь пуста" in s.value for s in at.success)
+
+        # в очереди появилась задача — счётчик и список должны сойтись
+        fake_api.routes[("GET", "/hitl/stats")] = {"pending": 1, "confirmed": 0, "rejected": 0}
+        fake_api.routes[("GET", "/hitl/queue")] = {"count": 1, "examples": [HITL_ITEM]}
+        at.run()
+        assert {m.label: m.value for m in at.metric}["В очереди"] == "1"
+        assert any("Critic: 5.00" in exp.label for exp in at.expander)
+        assert not any("Очередь пуста" in s.value for s in at.success)
+
+    def test_failed_queue_request_is_not_shown_as_empty(self, fake_api):
+        """/hitl/queue не отвечает (None) — это не «очередь пуста»."""
+        fake_api.routes.update({
+            ("GET", "/hitl/stats"): {"pending": 1, "confirmed": 0, "rejected": 0},
+            ("GET", "/hitl/feedback"): {"feedback": []},
+        })
+        at = run_page("pages/6_HITL_Queue.py", EDITOR)
+        assert not any("Очередь пуста" in s.value for s in at.success)
+
+    def test_tasks_outside_filters_are_not_shown_as_good_quality(self, fake_api):
+        """Задачи в очереди есть, но мимо фильтров — не «всё хорошего качества»."""
+        fake_api.routes.update({
+            ("GET", "/hitl/stats"): {"pending": 1, "confirmed": 0, "rejected": 0},
+            ("GET", "/hitl/queue"): {"count": 1, "examples": []},
+            ("GET", "/hitl/feedback"): {"feedback": []},
+        })
+        at = run_page("pages/6_HITL_Queue.py", EDITOR)
+        assert not any("Очередь пуста" in s.value for s in at.success)
+        assert any("фильтр" in i.value for i in at.info)
 
 
 class TestKnowledgePage:

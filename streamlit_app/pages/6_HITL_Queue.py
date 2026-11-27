@@ -32,63 +32,61 @@ variable = c_var.selectbox(
     "Переменная", [ALL, "temperature", "humidity", "pressure", "wind_speed", "precipitation",
                    "dew_point"],
 )
-queue_key = f"hitl|{city}|{variable}"
-# перевыгрузка при смене фильтров ИЛИ если список стёрт (после подтверждения/
-# отклонения данные обнуляются — без второго условия очередь показывалась пустой)
-if (st.session_state.get("hitl_queue_key") != queue_key
-        or st.session_state.get("hitl_queue_data") is None):
-    st.session_state["hitl_queue_key"] = queue_key
-    st.session_state["hitl_queue_data"] = api_client.get_hitl_queue(
-        city=None if city == ALL else city, variable=None if variable == ALL else variable
-    )
+# Очередь запрашивается при каждом перерендере, как и счётчики. Кэшировать ответ
+# в session_state нельзя: задача, попавшая в очередь при открытой странице,
+# учитывалась счётчиком, но не показывалась списком (оставался прежний ответ).
+queue = api_client.get_hitl_queue(
+    city=None if city == ALL else city, variable=None if variable == ALL else variable
+)
 
-queue = st.session_state.get("hitl_queue_data") or {}
-examples = queue.get("examples") or []
-if not examples:
-    st.success("Очередь пуста — все прогнозы хорошего качества 👌")
-else:
-    for item in examples:
-        task_id = item["task_id"]
-        header = (f"⏳ `{task_id[:8]}` · {item.get('city') or '—'} / {item.get('variable') or '—'} · "
-                  f"модель: {item.get('model_type') or '—'} · Critic: {format_score(item.get('critic_score'))}")
-        with st.expander(header):
-            left, right = st.columns([3, 2])
-            with left:
-                st.markdown("**Почему в очереди:**")
-                for error in item.get("validator_errors") or []:
-                    st.markdown(f"- ⚠️ Validator: {error}")
-                for suggestion in item.get("critic_suggestions") or []:
-                    st.markdown(f"- 💬 Critic: {suggestion}")
-                if not (item.get("validator_errors") or item.get("critic_suggestions")):
-                    st.caption(f"Critic ниже порога: {item.get('critic_reasoning') or 'без пояснения'}")
-                st.markdown(
-                    f"**Остановка цикла:** {item.get('stopped_reason')} · итераций: {item.get('iterations')}"
-                )
-            with right:
-                st.markdown("**Правка (опционально):**")
-                override = st.selectbox(
-                    "Модель", ["(оставить текущую)", "fit_arima", "fit_prophet", "fit_xgboost"],
-                    key=f"override_{task_id}",
-                )
-                comment = st.text_input("Комментарий", key=f"comment_{task_id}")
-                b1, b2 = st.columns(2)
-                with b1:
-                    if st.button("✅ Подтвердить", key=f"ok_{task_id}", type="primary",
-                                 use_container_width=True):
-                        result = api_client.confirm_hitl(
-                            task_id,
-                            model_type=None if override.startswith("(") else override,
-                            comment=comment or None,
-                        )
-                        if result:
-                            st.session_state["hitl_queue_data"] = None
-                            st.success(f"Подтверждено · кейс в базу знаний: {result['kb_inserted']}")
-                            st.rerun()
-                with b2:
-                    if st.button("❌ Отклонить", key=f"no_{task_id}", use_container_width=True):
-                        if api_client.reject_hitl(task_id, reason=comment or None):
-                            st.session_state["hitl_queue_data"] = None
-                            st.rerun()
+examples = (queue or {}).get("examples") or []
+if not examples and queue is not None:
+    # None — ошибка API (уже показана в api_request), а не пустая очередь
+    if queue.get("count"):
+        # счётчик учитывает все задачи, а список отфильтрован по Городу/Переменной
+        st.info("В очереди есть задачи, но под выбранные фильтры они не подходят.")
+    else:
+        st.success("Очередь пуста — все прогнозы хорошего качества 👌")
+for item in examples:
+    task_id = item["task_id"]
+    header = (f"⏳ `{task_id[:8]}` · {item.get('city') or '—'} / {item.get('variable') or '—'} · "
+              f"модель: {item.get('model_type') or '—'} · Critic: {format_score(item.get('critic_score'))}")
+    with st.expander(header):
+        left, right = st.columns([3, 2])
+        with left:
+            st.markdown("**Почему в очереди:**")
+            for error in item.get("validator_errors") or []:
+                st.markdown(f"- ⚠️ Validator: {error}")
+            for suggestion in item.get("critic_suggestions") or []:
+                st.markdown(f"- 💬 Critic: {suggestion}")
+            if not (item.get("validator_errors") or item.get("critic_suggestions")):
+                st.caption(f"Critic ниже порога: {item.get('critic_reasoning') or 'без пояснения'}")
+            st.markdown(
+                f"**Остановка цикла:** {item.get('stopped_reason')} · итераций: {item.get('iterations')}"
+            )
+        with right:
+            st.markdown("**Правка (опционально):**")
+            override = st.selectbox(
+                "Модель", ["(оставить текущую)", "fit_arima", "fit_prophet", "fit_xgboost"],
+                key=f"override_{task_id}",
+            )
+            comment = st.text_input("Комментарий", key=f"comment_{task_id}")
+            b1, b2 = st.columns(2)
+            with b1:
+                if st.button("✅ Подтвердить", key=f"ok_{task_id}", type="primary",
+                             use_container_width=True):
+                    result = api_client.confirm_hitl(
+                        task_id,
+                        model_type=None if override.startswith("(") else override,
+                        comment=comment or None,
+                    )
+                    if result:
+                        st.success(f"Подтверждено · кейс в базу знаний: {result['kb_inserted']}")
+                        st.rerun()
+            with b2:
+                if st.button("❌ Отклонить", key=f"no_{task_id}", use_container_width=True):
+                    if api_client.reject_hitl(task_id, reason=comment or None):
+                        st.rerun()
 
 st.divider()
 
