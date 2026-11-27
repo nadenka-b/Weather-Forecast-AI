@@ -32,7 +32,10 @@ variable = c_var.selectbox(
                    "dew_point"],
 )
 queue_key = f"hitl|{city}|{variable}"
-if st.session_state.get("hitl_queue_key") != queue_key:
+# перевыгрузка при смене фильтров ИЛИ если список стёрт (после подтверждения/
+# отклонения данные обнуляются — без второго условия очередь показывалась пустой)
+if (st.session_state.get("hitl_queue_key") != queue_key
+        or st.session_state.get("hitl_queue_data") is None):
     st.session_state["hitl_queue_key"] = queue_key
     st.session_state["hitl_queue_data"] = api_client.get_hitl_queue(
         city=None if city == ALL else city, variable=None if variable == ALL else variable
