@@ -149,10 +149,6 @@ class TestModeForecasts:
         assert "hitl_requested" in agents["agent_metrics"]
         assert "iterations" in agents["agent_metrics"]
 
-    async def test_foundation_mode_marked_unavailable(self):
-        record = await evaluate_window(make_window(0, n=120), EvalConfig(mode="foundation", horizon=7))
-        assert "не установлены" in record["error"]
-
     async def test_unknown_mode(self):
         with pytest.raises(ValueError, match="Неизвестный режим"):
             await evaluate_window(make_window(0, n=120), EvalConfig(mode="magic", horizon=7))

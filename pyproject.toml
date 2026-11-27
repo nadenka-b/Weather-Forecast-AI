@@ -66,14 +66,6 @@ streamlit = "^1.40"
 # streamlit_app/utils/api_client.py работает через requests
 requests = "^2.31"
 
-# Бонус (+5%): TS Foundation Models для режима +foundation (Этапы 7/13).
-# Установка: poetry install --with foundation
-[tool.poetry.group.foundation]
-optional = true
-
-[tool.poetry.group.foundation.dependencies]
-chronos-forecasting = ">=1.5"
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

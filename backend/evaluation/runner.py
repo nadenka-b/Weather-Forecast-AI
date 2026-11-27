@@ -5,8 +5,7 @@
                 SARIMA при сезонности <= 31, XGBoost), лучшая по валидации;
     rag       — выбор модели по ближайшему кейсу базы знаний (RAG без LLM);
     agents    — полный цикл агентов (Supervisor: DataAnalyst -> ModelSelector
-                c Tool Calling -> Validator -> Critic) + финальный прогноз;
-    foundation — TS Foundation Models (бонус; если не установлены — пропуск).
+                c Tool Calling -> Validator -> Critic) + финальный прогноз.
 
 Один тестовый ряд = окно из test_set.jsonl: последние `horizon` точек — факт,
 остальное — обучение (берётся последняя доля `data_fraction`).
@@ -44,7 +43,7 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_TEST_SET = BASE_DIR / "data" / "processed" / "test_set.jsonl"
 
-MODES: tuple[str, ...] = ("baseline", "rag", "agents", "foundation")
+MODES: tuple[str, ...] = ("baseline", "rag", "agents")
 METRIC_KEYS = ("mae", "rmse", "mape", "wape", "mase")
 MIN_TRAIN = 60
 EVAL_HORIZON_VAL = 14  # горизонт валидационного сплита при выборе модели
@@ -277,9 +276,6 @@ async def evaluate_window(
         "horizon": config.horizon,
         "data_fraction": config.data_fraction,
     }
-    if config.mode == "foundation":
-        record["error"] = "TS Foundation Models не установлены (бонус-группа poetry --with foundation)"
-        return record
     if config.mode not in MODES:
         raise ValueError(f"Неизвестный режим {config.mode!r}; доступны {MODES}")
 

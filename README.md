@@ -108,7 +108,7 @@ cp .env.example .env                        # LM_STUDIO_BASE_URL, JWT_SECRET и 
 # данные, база знаний и справочник
 poetry run python scripts/download_data.py                              # Jena Climate, Daily Climate
 poetry run python scripts/generate_knowledge_base.py --target-cases 1000  # окна -> сетка моделей -> кейсы
-poetry run python scripts/generate_glossary.py                          # 578 метеотерминов
+poetry run python scripts/generate_glossary.py                          # 577 метеотерминов
 poetry run python scripts/import_data.py                                # в БД (без дублей)
 
 poetry run python run.py                     # API: http://localhost:8000/docs
@@ -156,7 +156,7 @@ poetry run streamlit run streamlit_app/app.py --server.port 8501
 | **Jena Climate** (UCI, 2009–2016) | 420 451 наблюдений, 14 переменных → 2921 день | 10 мин → D | temperature, pressure, humidity, wind_speed, dew_point |
 | **Daily Climate** (Kaggle, Дели) | 1462 наблюдения, 4 переменные | D | temperature, humidity |
 | **База знаний** | 1000 кейсов (Jena 910, Delhi 90): окна 365 дней с шагом 10 → сетка моделей → лучший по MASE | D | 14 признаков на кейс |
-| **Справочник** | 578 метеорологических, климатологических и статистических терминов | — | — |
+| **Справочник** | 577 метеорологических, климатологических и статистических терминов | — | — |
 | **Holdout-набор** | 238 окон, не пересекается с базой знаний (зазор по времени) | D | те же ряды |
 
 ## 🧪 Тесты
@@ -178,7 +178,6 @@ poetry run ruff check backend tests scripts streamlit_app
 | `baseline` | ✗ | ✗ | ✗ | классика без LLM: сетка моделей, лучшая по валидации |
 | `rag` | ✗ | ✓ | ✗ | выбор модели по ближайшему кейсу базы знаний |
 | `agents` | ✓ | ✓ | ✓ | полный цикл агентов + финальный прогноз |
-| `foundation` | — | — | — | TS Foundation Models (Chronos/TimesFM; пока не установлены — пропуск) |
 
 ```bash
 poetry run python scripts/run_eval.py --num-series 50 --horizons 7,14 --data-fractions 1.0
@@ -233,7 +232,6 @@ poetry run python scripts/report_tables.py          # таблицы и граф
 - **Prophet требует CmdStan** (`poetry run python -c "import cmdstanpy; cmdstanpy.install_cmdstan()"`).
   Без него (а на Windows с нелатинской локалью `cmdstanpy` не может загрузить бэкенд) инструмент
   возвращает понятную ошибку, остальные модели работают.
-- **TS Foundation Models не установлены** — режим `foundation` пропускается.
 - **Векторный индекс**: в режиме `memory` индекс пересобирается на каждую задачу (~1 с на 1000 кейсов);
   в режиме `qdrant` переиндексация полная (пересоздание коллекции), не инкрементальная.
 - **Celery-воркер**: `--concurrency=1` — одна тяжёлая задача одновременно.

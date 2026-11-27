@@ -164,7 +164,7 @@ class EvaluationResult(Base):
 
     id = Column(String, primary_key=True, default=_uuid)
     model_name = Column(String, nullable=False)
-    mode = Column(String, nullable=False)        # baseline | rag | agents | foundation
+    mode = Column(String, nullable=False)        # baseline | rag | agents
     sample_size = Column(Integer, nullable=True)  # число рядов
     horizon = Column(Integer, nullable=True)
     data_fraction = Column(Float, nullable=True)  # доля обучающих данных (0.1..1.0)

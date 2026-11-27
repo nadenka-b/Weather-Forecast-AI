@@ -17,7 +17,7 @@ logout_button()
 st.title("📊 Оценка качества")
 st.markdown(
     "Режимы: `baseline` — классика без LLM, `rag` — выбор модели по кейсам базы знаний, "
-    "`agents` — полный цикл агентов, `foundation` — TS Foundation Models (если установлены). "
+    "`agents` — полный цикл агентов. "
     "Оценка идёт на holdout-наборе (`data/processed/test_set.jsonl`)."
 )
 can_run = has_role("editor", "admin")
@@ -27,7 +27,7 @@ can_run = has_role("editor", "admin")
 # ============================================================================
 with st.form("eval_form"):
     c1, c2 = st.columns(2)
-    modes = c1.multiselect("Режимы", ["baseline", "rag", "agents", "foundation"],
+    modes = c1.multiselect("Режимы", ["baseline", "rag", "agents"],
                            default=["baseline", "rag", "agents"])
     horizons = c2.multiselect("Горизонты", [7, 10, 14, 20, 30], default=[7, 14])
     c3, c4 = st.columns(2)
@@ -121,7 +121,7 @@ st.divider()
 # Сохранённые результаты (для всех)
 # ============================================================================
 st.subheader("Сохранённые результаты")
-mode_filter = st.selectbox("Режим", [ALL, "baseline", "rag", "agents", "foundation"])
+mode_filter = st.selectbox("Режим", [ALL, "baseline", "rag", "agents"])
 saved = api_client.get_evaluation_results(
     mode=None if mode_filter == ALL else mode_filter, limit=50
 )

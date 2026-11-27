@@ -30,7 +30,6 @@ MODE_LABELS = {
     "baseline": "baseline (классика без LLM)",
     "rag": "+rag (модель по кейсам БЗ)",
     "agents": "+agents (полный цикл агентов)",
-    "foundation": "+foundation (TS Foundation Models)",
 }
 METRICS = ("mae", "rmse", "mape", "wape", "mase")
 

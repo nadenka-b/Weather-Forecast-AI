@@ -95,7 +95,7 @@ class HitlRequest(BaseModel):
 # ============================================================================
 # Оценка качества (Этап 13)
 # ============================================================================
-EvalMode = Literal["baseline", "rag", "agents", "foundation"]
+EvalMode = Literal["baseline", "rag", "agents"]
 
 
 class EvaluateBatchRequest(BaseModel):

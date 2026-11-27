@@ -5,12 +5,12 @@
     --horizons       горизонты прогноза, напр. 7,14 (в задании: 10,20,50);
     --data-fractions доли обучающих данных: 0.1,0.2,0.5,1.0 (по умолчанию 1.0);
     --mode           один или несколько режимов через запятую: baseline, rag,
-                     agents, foundation; all (по умолчанию) — все режимы;
+                     agents; all (по умолчанию) — все режимы;
     --fast           сокращённая сетка baseline (naive + ARIMA(1,1,1));
     --no-save-db     не записывать сводку в БД (evaluation_results, model_comparisons).
 
 Режимы: baseline (классика без LLM), rag (выбор модели по кейсам БЗ),
-agents (полный цикл агентов), foundation (бонус; без установки — пропуск).
+agents (полный цикл агентов).
 Метрики: MAE/RMSE/MAPE/WAPE/MASE на горизонте + агентные метрики (итерации,
 доля HITL, токены LLM, время). Сравнение режимов: Diebold-Mariano, Wilcoxon,
 bootstrap-CI, paired t-test.
@@ -78,7 +78,7 @@ def main() -> int:
     parser.add_argument("--horizons", default="14", help="горизонты через запятую")
     parser.add_argument("--data-fractions", default="1.0", help="доли данных через запятую")
     parser.add_argument("--mode", default="all",
-                        help="режим(ы) через запятую: baseline, rag, agents, foundation или all")
+                        help="режим(ы) через запятую: baseline, rag, agents или all")
     parser.add_argument("--fast", action="store_true", help="сокращённая сетка baseline")
     parser.add_argument("--test-set", type=Path, default=DEFAULT_TEST_SET)
     parser.add_argument("--out-dir", type=Path, default=OUT_DIR)

@@ -29,7 +29,7 @@ CITIES = ["Jena", "Delhi", NO_CITY]
 MODELS = ["naive", "arima", "sarima", "xgboost", "prophet"]
 
 # Режимы оценки (backend/evaluation/runner.py: MODES)
-EVAL_MODES = ["baseline", "rag", "agents", "foundation"]
+EVAL_MODES = ["baseline", "rag", "agents"]
 
 # Sentinel для фильтров «не фильтровать» (helpers.filter_value)
 ALL = "All"

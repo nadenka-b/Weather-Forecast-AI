@@ -4,7 +4,7 @@ ModelSelector НЕ генерирует сырой Python-код (антипат
 LLM возвращает JSON {tool, arguments}, а инструмент выполняется реестром.
 
 Минимум по заданию: fit_arima, fit_prophet, fit_xgboost + fit_tabular_xgboost
-(демонстрация расширяемости на табличные задачи). Бонус infer_chronos — Этап 13.
+(демонстрация расширяемости на табличные задачи).
 """
 from __future__ import annotations
 
