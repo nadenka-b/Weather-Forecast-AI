@@ -1,14 +1,12 @@
 # streamlit_app/main.py
-"""Главная страница: приветствие, здоровье сервисов, быстрый прогноз, навигация."""
+"""Главная страница: приветствие, обзор проекта и назначение страниц (меню слева)."""
 
 import streamlit as st
 
-from utils import api_client
 from utils.auth_guard import logout_button, require_login
-from utils.constants import CITIES
-from utils.helpers import city_value, csv_to_series, status_label
 
-st.set_page_config(page_title="Главная — Weather Forecast AI", page_icon="🌤", layout="wide")
+st.set_page_config(page_title="Главная — Weather Forecast AI",
+                   page_icon="🌤", layout="wide")
 require_login()
 logout_button()
 
@@ -16,85 +14,67 @@ user = st.session_state.get("user") or {}
 role = user.get("role", "user")
 st.title("🌤 Weather Forecast AI")
 st.markdown(f"Добро пожаловать, **{user.get('email', '')}** (роль: `{role}`)")
+
 st.markdown(
-    "Загрузите метеоряд — мультиагентная система (DataAnalyst → ModelSelector → Validator → "
-    "Critic → Editor) подберёт модель через Tool Calling, построит прогноз на 7–14 дней "
-    "и объяснит свой выбор."
+    "Интеллектуальная система прогнозирования погодных временных рядов: вы загружаете "
+    "ряд дневных наблюдений (температура, осадки и другие переменные) и указываете горизонт "
+    "7–14 дней — система сама подбирает модель прогнозирования, строит прогноз, проверяет "
+    "его реалистичность и объясняет свой выбор."
 )
 
-# --- Здоровье сервисов
-health = api_client.get_health() or {}
-services = health.get("services") or {}
-if services:
-    with st.expander(f"🔧 Состояние сервисов: {health.get('status', '—')}", expanded=False):
-        cols = st.columns(len(services))
-        for col, (name, info) in zip(cols, services.items()):
-            healthy = info.get("healthy", True)
-            col.metric(name, "healthy" if healthy else "unhealthy",
-                       delta=None if healthy else (info.get("error") or "")[:120])
-        st.caption(
-            f"LLM: {services.get('llm', {}).get('provider', '—')} · "
-            f"задачи: {services.get('tasks', {}).get('backend', '—')}"
-        )
+with st.expander("🤖 Как проходит прогноз"):
+    st.markdown(
+        "1. **DataAnalyst** проверяет ряд: пропуски, регулярность, сезонность, стационарность.\n"
+        "2. **ModelSelector** выбирает модель (ARIMA/SARIMA, Prophet, XGBoost) — LLM вызывает "
+        "инструмент из реестра (Tool Calling) с опорой на похожие кейсы из базы знаний (RAG).\n"
+        "3. **Validator** проверяет физическую реалистичность: климатические пределы, длина, "
+        "остатки (Ljung-Box, Shapiro-Wilk).\n"
+        "4. **Critic** оценивает качество прогноза и его объяснимость (LLM-as-a-Judge).\n"
+        "5. **Editor** при замечаниях правит гиперпараметры и переобучает — принимается "
+        "правка, только если ошибка на контрольном отрезке стала меньше.\n\n"
+        "Всеми агентами управляет **Supervisor** (до 3 итераций). Если система не уверена — "
+        "прогноз уходит на подтверждение эксперту в HITL-очередь."
+    )
 
-st.divider()
+with st.expander("📈 Что вы получаете в результате"):
+    st.markdown(
+        "- прогноз на горизонт (график и CSV-файл);\n"
+        "- метрики точности (MAE, RMSE, MAPE, WAPE, MASE) и **сравнение с наивным прогнозом**;\n"
+        "- пошаговое дерево рассуждений: что делал каждый агент и почему выбрана модель;\n"
+        "- при сомнительном качестве — решение эксперта (подтверждение пополняет базу знаний)."
+    )
 
-# --- Быстрый прогноз: результат привязан к ключу входа (quick_key), как в методичке
-left, right = st.columns([3, 2])
-with left:
-    st.subheader("⚡ Быстрый прогноз")
-    file = st.file_uploader("CSV ряда (date,value)", type="csv", key="quick_file")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        horizon = st.slider("Горизонт, дней", 1, 60, 14, key="quick_horizon")
-    with c2:
-        city = st.selectbox("Город", CITIES, key="quick_city")
-    with c3:
-        variable = st.selectbox(
-            "Переменная",
-            ["temperature", "humidity", "pressure", "wind_speed", "precipitation", "dew_point"],
-            key="quick_variable",
-        )
+st.subheader("📑 Страницы")
 
-    quick_key = f"{getattr(file, 'name', '')}|{horizon}|{city}|{variable}"
-    if st.session_state.get("quick_key") != quick_key:
-        st.session_state["quick_key"] = quick_key
-        st.session_state["quick_result"] = None
+# описания только доступных роли страниц (меню слева показывает те же)
+pages: list[tuple[str, str]] = [
+    ("📈 **Прогноз**",
+     "загрузить CSV или ввести ряд, запустить прогноз и увидеть результат: модель, метрики, "
+     "сравнение с наивным прогнозом, дерево рассуждений"),
+    ("📁 **Мои прогнозы**",
+     "история ваших задач: статусы, MAE, переход к результату и логам"),
+    ("🧠 **Логи рассуждений**",
+     "пошаговое дерево агентов и трассировка LLM-вызовов (токены, время)"),
+    ("📊 **Оценка качества**",
+     "таблицы и графики оценки по режимам/горизонтам/долям данных (запуск — editor и выше)"),
+    ("🔍 **База знаний**",
+     "поиск похожих кейсов и справочник метеотерминов (правка — admin)"),
+]
+if role in ("editor", "admin"):
+    pages += [
+        ("⚖️ **Сравнение моделей**",
+         "MAE/RMSE моделей-конкурентов, победитель, статистическая значимость"),
+        ("🛠 **HITL-очередь**",
+         "прогнозы на подтверждение экспертом: подтвердить (кейс — в базу знаний) или отклонить"),
+    ]
+if role == "admin":
+    pages.append(
+        ("👑 **Состояние системы**",
+         "здоровье сервисов, кэш и его очистка, переиндексация RAG"),
+    )
 
-    if st.button("🚀 Запустить прогноз", type="primary", disabled=file is None,
-                 use_container_width=True):
-        values, _dates = csv_to_series(file.getvalue())
-        if len(values) < 30:
-            st.error("Ряд слишком короткий: нужно не менее 30 точек")
-        else:
-            result = api_client.create_forecast_json(
-                values, horizon=horizon, city=city_value(city), variable=variable
-            )
-            if result and result.get("task_id"):
-                st.session_state["quick_result"] = result["task_id"]
-                st.session_state["forecast_task_id"] = result["task_id"]
-                st.switch_page("pages/1_Forecast.py")
-
-    task_id = st.session_state.get("quick_result")
-    if task_id:
-        st.success(f"Задача запущена: `{task_id[:8]}`")
-        status = api_client.get_forecast_status(task_id)
-        if status:
-            st.caption(
-                f"Статус: {status_label(status.get('status'))} — детали на странице «Прогноз»"
-            )
-        else:
-            st.caption("Статус уточняется…")
-
-with right:
-    st.subheader("📑 Страницы")
-    st.page_link("pages/1_Forecast.py", label="📈 Прогноз — загрузка ряда и результат", icon="📈")
-    st.page_link("pages/2_My_Forecasts.py", label="📁 Мои прогнозы", icon="📁")
-    st.page_link("pages/3_Reasoning.py", label="🧠 Логи рассуждений и LLM-вызовов", icon="🧠")
-    st.page_link("pages/4_Evaluation.py", label="📊 Оценка качества", icon="📊")
-    st.page_link("pages/7_Knowledge_Base.py", label="🔍 База знаний и справочник", icon="🔍")
-    if role in ("editor", "admin"):
-        st.page_link("pages/5_Model_Compare.py", label="⚖️ Сравнение моделей", icon="⚖️")
-        st.page_link("pages/6_HITL_Queue.py", label="🛠 HITL-очередь", icon="🛠")
-    if role == "admin":
-        st.page_link("pages/8_System_Health.py", label="👑 Состояние системы", icon="👑")
+st.markdown(
+    "| Страница | Что на ней |\n|---|---|\n"
+    + "".join(f"| {name} | {desc} |\n" for name, desc in pages)
+)
+st.caption("Страницы открываются из меню слева.")

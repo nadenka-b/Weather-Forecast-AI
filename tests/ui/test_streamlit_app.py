@@ -143,15 +143,17 @@ class TestDashboard:
         assert any("нужно войти" in e.value for e in at.error)
         assert not at.title
 
-    def test_links_depend_on_role(self, fake_api):
-        fake_api.routes[("GET", "/health")] = {"status": "healthy", "services": {
-            "database": {"healthy": True}, "llm": {"healthy": True, "provider": "stub"}}}
-        user_links = {link.label for link in run_page("main.py", USER).page_link}
-        assert any("HITL" in label for label in user_links) is False  # обычному пользователю скрыто
-        editor_links = {link.label for link in run_page("main.py", EDITOR).page_link}
-        assert any("HITL" in label for label in editor_links)
-        admin_links = {link.label for link in run_page("main.py", ADMIN).page_link}
-        assert any("Состояние системы" in label for label in admin_links)
+    def test_page_guide_follows_role(self, fake_api):
+        # главная — обзор и описания только доступных роли страниц; API не зовёт
+        # (🛠 — строка HITL-очереди, 👑 — строки «Состояние системы» в таблице)
+        user_text = " ".join(m.value for m in run_page("main.py", USER).markdown)
+        assert "Прогноз" in user_text and "База знаний" in user_text
+        assert "🛠" not in user_text and "👑" not in user_text
+        editor_text = " ".join(m.value for m in run_page("main.py", EDITOR).markdown)
+        assert "🛠" in editor_text and "👑" not in editor_text
+        admin_text = " ".join(m.value for m in run_page("main.py", ADMIN).markdown)
+        assert "👑" in admin_text
+        assert fake_api.calls == []
 
 
 # ============================================================================

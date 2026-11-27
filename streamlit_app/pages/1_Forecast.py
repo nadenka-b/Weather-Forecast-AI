@@ -101,7 +101,7 @@ def show_result(task_id: str) -> None:
 # ============================================================================
 # Форма запуска
 # ============================================================================
-tab_file, tab_manual, tab_existing = st.tabs(["📂 Загрузить CSV", "⌨️ Ввести ряд", "🔎 По ID задачи"])
+tab_file, tab_manual = st.tabs(["📂 Загрузить CSV", "⌨️ Ввести ряд"])
 
 with tab_file:
     file = st.file_uploader("CSV ряда (date,value) или (value)", type="csv", key="fc_file")
@@ -156,13 +156,6 @@ with tab_manual:
                 if accepted and accepted.get("task_id"):
                     st.session_state["forecast_result"] = accepted["task_id"]
                     st.rerun()
-
-with tab_existing:
-    task_input = st.text_input("ID задачи", key="fc_task_input",
-                               value=st.session_state.get("forecast_result") or "")
-    if st.button("Открыть", key="fc_open") and task_input.strip():
-        st.session_state["forecast_result"] = task_input.strip()
-        st.rerun()
 
 st.divider()
 if st.session_state.get("forecast_result"):
